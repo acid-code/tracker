@@ -10,9 +10,13 @@ import {
   YAxis,
 } from "recharts";
 import { SLEEP_HOURS_MAX, SLEEP_HOURS_MIN } from "@/lib/sleep";
-
-const axis = { stroke: "#6b7280", fontSize: 11 };
-const grid = { stroke: "#2a2a2a" };
+import {
+  chartAccent,
+  chartAxis,
+  chartCursorStroke,
+  chartGrid,
+  chartTooltipStyle,
+} from "@/lib/chart-theme";
 
 export function SleepChart({
   data,
@@ -35,10 +39,14 @@ export function SleepChart({
           margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
           accessibilityLayer={false}
         >
-          <CartesianGrid strokeDasharray="3 3" {...grid} />
-          <XAxis dataKey="date" tick={axis} tickFormatter={(v) => v.slice(5)} />
+          <CartesianGrid strokeDasharray="3 3" {...chartGrid} />
+          <XAxis
+            dataKey="date"
+            tick={chartAxis}
+            tickFormatter={(v) => v.slice(5)}
+          />
           <YAxis
-            tick={axis}
+            tick={chartAxis}
             domain={[
               Math.min(SLEEP_HOURS_MIN - 1, ...data.map((d) => d.hours)) - 0.5,
               Math.max(SLEEP_HOURS_MAX + 1, ...data.map((d) => d.hours)) + 0.5,
@@ -46,12 +54,8 @@ export function SleepChart({
             width={36}
           />
           <Tooltip
-            cursor={{ stroke: "rgba(125, 211, 192, 0.35)", strokeWidth: 1 }}
-            contentStyle={{
-              background: "#171717",
-              border: "1px solid #2a2a2a",
-              borderRadius: 8,
-            }}
+            cursor={{ stroke: chartCursorStroke, strokeWidth: 1 }}
+            contentStyle={chartTooltipStyle}
             formatter={(value, name) => {
               if (name === "hours") return [`${value}h`, "Hours"];
               return [value, "Quality"];
@@ -60,9 +64,9 @@ export function SleepChart({
           <Line
             type="monotone"
             dataKey="hours"
-            stroke="#7dd3c0"
+            stroke={chartAccent}
             strokeWidth={2}
-            dot={{ r: 3, fill: "#7dd3c0" }}
+            dot={{ r: 3, fill: chartAccent }}
             activeDot={false}
             name="hours"
           />

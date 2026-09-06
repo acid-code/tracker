@@ -1,6 +1,7 @@
 import { auth, signOut } from "@/auth";
 import { AppShell } from "@/components/shell/AppShell";
 import { SettingsNutrition } from "@/components/SettingsNutrition";
+import { SettingsNutritionDisplay } from "@/components/SettingsNutritionDisplay";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,8 @@ export default async function SettingsPage() {
         </div>
 
         <SettingsNutrition />
+
+        <SettingsNutritionDisplay />
 
         <form
           action={async () => {

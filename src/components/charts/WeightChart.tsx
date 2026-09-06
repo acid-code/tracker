@@ -9,9 +9,13 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
-
-const axis = { stroke: "#6b7280", fontSize: 11 };
-const grid = { stroke: "#2a2a2a" };
+import {
+  chartAccent,
+  chartAxis,
+  chartCursorStroke,
+  chartGrid,
+  chartTooltipStyle,
+} from "@/lib/chart-theme";
 
 export function WeightChart({
   data,
@@ -34,25 +38,25 @@ export function WeightChart({
           margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
           accessibilityLayer={false}
         >
-          <CartesianGrid strokeDasharray="3 3" {...grid} />
-          <XAxis dataKey="date" tick={axis} tickFormatter={(v) => v.slice(5)} />
+          <CartesianGrid strokeDasharray="3 3" {...chartGrid} />
+          <XAxis
+            dataKey="date"
+            tick={chartAxis}
+            tickFormatter={(v) => v.slice(5)}
+          />
           <YAxis
-            tick={axis}
+            tick={chartAxis}
             domain={["dataMin - 1", "dataMax + 1"]}
             width={40}
           />
           <Tooltip
-            cursor={{ stroke: "rgba(125, 211, 192, 0.35)", strokeWidth: 1 }}
-            contentStyle={{
-              background: "#171717",
-              border: "1px solid #2a2a2a",
-              borderRadius: 8,
-            }}
+            cursor={{ stroke: chartCursorStroke, strokeWidth: 1 }}
+            contentStyle={chartTooltipStyle}
           />
           <Line
             type="monotone"
             dataKey="weightKg"
-            stroke="#7dd3c0"
+            stroke={chartAccent}
             strokeWidth={2}
             dot={false}
             activeDot={false}

@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+/* Default = Classic (original dark mint before palette options) */
 :root {
   --background: #0c0c0c;
   --foreground: #e8e8e8;
@@ -16,6 +17,85 @@
   --protein-max: #2f9a84;
   --warn: #e0a46a;
   --warn-soft: rgba(224, 164, 106, 0.12);
+}
+
+html[data-app-palette="classic"] {
+  --background: #0c0c0c;
+  --foreground: #e8e8e8;
+  --surface: #141414;
+  --surface-2: #1c1c1c;
+  --border: #2a2a2a;
+  --muted: #8a8a8a;
+  --accent: #7dd3c0;
+  --accent-soft: rgba(125, 211, 192, 0.12);
+  --protein-low: #5b9fd4;
+  --protein-low-soft: rgba(91, 159, 212, 0.14);
+  --protein-soft: #9ee0d2;
+  --protein-hard: #5bc4ae;
+  --protein-max: #2f9a84;
+  --warn: #e0a46a;
+  --warn-soft: rgba(224, 164, 106, 0.12);
+  color-scheme: dark;
+}
+
+/* Warm dark — soft terracotta, not neon */
+html[data-app-palette="ember"] {
+  --background: #12100e;
+  --foreground: #f2ebe4;
+  --surface: #1b1815;
+  --surface-2: #26211d;
+  --border: #3d362f;
+  --muted: #9a8f84;
+  --accent: #d4896a;
+  --accent-soft: rgba(212, 137, 106, 0.14);
+  --protein-low: #c4a574;
+  --protein-low-soft: rgba(196, 165, 116, 0.14);
+  --protein-soft: #e8c4a8;
+  --protein-hard: #d4896a;
+  --protein-max: #b56b4a;
+  --warn: #e0a46a;
+  --warn-soft: rgba(224, 164, 106, 0.12);
+  color-scheme: dark;
+}
+
+/* Light mint day */
+html[data-app-palette="daylight"] {
+  --background: #f3f6f5;
+  --foreground: #1a2220;
+  --surface: #ffffff;
+  --surface-2: #e7eeeb;
+  --border: #c9d5d0;
+  --muted: #5a6b66;
+  --accent: #2a9d8f;
+  --accent-soft: rgba(42, 157, 143, 0.12);
+  --protein-low: #3d7ea6;
+  --protein-low-soft: rgba(61, 126, 166, 0.12);
+  --protein-soft: #5eb8a8;
+  --protein-hard: #2a9d8f;
+  --protein-max: #1d7a6e;
+  --warn: #b8792e;
+  --warn-soft: rgba(184, 121, 46, 0.12);
+  color-scheme: light;
+}
+
+/* Light cool slate */
+html[data-app-palette="fog"] {
+  --background: #eef1f4;
+  --foreground: #1c232b;
+  --surface: #ffffff;
+  --surface-2: #e3e8ee;
+  --border: #c5ced8;
+  --muted: #5a6572;
+  --accent: #4a7c9b;
+  --accent-soft: rgba(74, 124, 155, 0.12);
+  --protein-low: #6b8cae;
+  --protein-low-soft: rgba(107, 140, 174, 0.12);
+  --protein-soft: #7aa3b8;
+  --protein-hard: #4a7c9b;
+  --protein-max: #355f78;
+  --warn: #b8893d;
+  --warn-soft: rgba(184, 137, 61, 0.12);
+  color-scheme: light;
 }
 
 @theme inline {
@@ -35,8 +115,16 @@ body {
   color: var(--foreground);
   font-family: var(--font-dm-sans), system-ui, sans-serif;
   background-image:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(125, 211, 192, 0.08), transparent),
-    linear-gradient(180deg, #0c0c0c 0%, #101010 100%);
+    radial-gradient(
+      ellipse 80% 50% at 50% -20%,
+      color-mix(in srgb, var(--accent) 14%, transparent),
+      transparent
+    ),
+    linear-gradient(
+      180deg,
+      var(--background) 0%,
+      color-mix(in srgb, var(--background) 92%, var(--surface)) 100%
+    );
   min-height: 100dvh;
   overflow-x: hidden;
 }
@@ -85,4 +173,61 @@ button {
   50% {
     filter: brightness(1.2);
   }
+}
+
+/* Nutrition progress viz: distinct macro bar/ring colors per palette */
+.nutrition-viz {
+  --nv-track: var(--surface-2);
+  --nv-protein: var(--protein-hard);
+  --nv-protein-low: var(--protein-low);
+  --nv-protein-soft: var(--protein-soft);
+  --nv-protein-max: var(--protein-max);
+  --nv-calories: var(--accent);
+  --nv-fat: color-mix(in srgb, var(--accent) 55%, var(--muted));
+  --nv-fiber: color-mix(in srgb, var(--accent) 40%, #6b8f71);
+  --nv-over: color-mix(in srgb, var(--warn) 70%, var(--background));
+}
+
+.nutrition-viz[data-nutrition-palette="classic"] {
+  --nv-protein: #5bc4ae;
+  --nv-protein-low: #5b9fd4;
+  --nv-protein-soft: #9ee0d2;
+  --nv-protein-max: #2f9a84;
+  --nv-calories: #7dd3c0;
+  --nv-fat: #6a9e94;
+  --nv-fiber: #8bb89a;
+  --nv-over: #3d6b5f;
+}
+
+.nutrition-viz[data-nutrition-palette="ember"] {
+  --nv-protein: #d4896a;
+  --nv-protein-low: #c4a574;
+  --nv-protein-soft: #e8c4a8;
+  --nv-protein-max: #b56b4a;
+  --nv-calories: #e07a5f;
+  --nv-fat: #c9a227;
+  --nv-fiber: #d4a574;
+  --nv-over: #6b3a28;
+}
+
+.nutrition-viz[data-nutrition-palette="daylight"] {
+  --nv-protein: #2a9d8f;
+  --nv-protein-low: #3d7ea6;
+  --nv-protein-soft: #5eb8a8;
+  --nv-protein-max: #1d7a6e;
+  --nv-calories: #3cb4a0;
+  --nv-fat: #7a9e6a;
+  --nv-fiber: #6b9e7a;
+  --nv-over: #8a4a2a;
+}
+
+.nutrition-viz[data-nutrition-palette="fog"] {
+  --nv-protein: #4a7c9b;
+  --nv-protein-low: #6b8cae;
+  --nv-protein-soft: #7aa3b8;
+  --nv-protein-max: #355f78;
+  --nv-calories: #5a9ab0;
+  --nv-fat: #7b8cff;
+  --nv-fiber: #6b9e8a;
+  --nv-over: #4a3a5a;
 }

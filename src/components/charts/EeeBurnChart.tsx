@@ -9,9 +9,15 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-
-const axis = { stroke: "#6b7280", fontSize: 11 };
-const grid = { stroke: "#2a2a2a" };
+import {
+  chartAxis,
+  chartBarFill,
+  chartCursorFill,
+  chartGrid,
+  chartTooltipItemStyle,
+  chartTooltipLabelStyle,
+  chartTooltipStyle,
+} from "@/lib/chart-theme";
 
 export function EeeBurnChart({
   data,
@@ -42,30 +48,25 @@ export function EeeBurnChart({
           barCategoryGap="18%"
           accessibilityLayer={false}
         >
-          <CartesianGrid strokeDasharray="3 3" vertical={false} {...grid} />
+          <CartesianGrid strokeDasharray="3 3" vertical={false} {...chartGrid} />
           <XAxis
             dataKey="date"
-            tick={axis}
+            tick={chartAxis}
             tickFormatter={(v) => v.slice(5)}
             interval="preserveStartEnd"
           />
-          <YAxis tick={axis} width={40} />
+          <YAxis tick={chartAxis} width={40} />
           <Tooltip
-            cursor={{ fill: "rgba(125, 211, 192, 0.1)" }}
-            contentStyle={{
-              background: "#171717",
-              border: "1px solid #2a2a2a",
-              borderRadius: 8,
-              color: "#e8e8e8",
-            }}
-            labelStyle={{ color: "#a3a3a3" }}
-            itemStyle={{ color: "#e8e8e8" }}
+            cursor={{ fill: chartCursorFill }}
+            contentStyle={chartTooltipStyle}
+            labelStyle={chartTooltipLabelStyle}
+            itemStyle={chartTooltipItemStyle}
             formatter={(value) => [`${value} kcal`, "EEE burn"]}
             labelFormatter={(label) => label}
           />
           <Bar
             dataKey="caloriesBurned"
-            fill="rgba(125, 211, 192, 0.75)"
+            fill={chartBarFill}
             radius={[4, 4, 0, 0]}
             maxBarSize={28}
             name="EEE (kcal)"

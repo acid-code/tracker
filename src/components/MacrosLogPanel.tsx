@@ -8,16 +8,18 @@ import {
   FAVORITES_CHANGED,
   type FoodSearchResult,
 } from "@/components/FoodSearch";
+import { MacroProgressViz } from "@/components/MacroProgressViz";
 import { MacroWarningsBanner } from "@/components/MacroWarningsBanner";
 import { SleepUndersleepTip } from "@/components/SleepUndersleepTip";
 import { nutritionFieldClass } from "@/components/nutrition-ui";
 import { apiFetch } from "@/lib/api-fetch";
 import { scaleFood } from "@/lib/food-reference";
-import { formatMacroShort, getMacroWarnings, progressRatio, proteinBarFillClass, proteinBarSegments, proteinRemainingLabel, remainingLabel } from "@/lib/macros";
+import { formatMacroShort, getMacroWarnings } from "@/lib/macros";
 import { invalidateAfterMacros } from "@/lib/query-invalidate";
 import { queryKeys } from "@/lib/query-keys";
 import { todayISODate } from "@/lib/tdee";
 import { useMacrosQuery } from "@/lib/use-macros-query";
+import { useNutritionVizPrefs } from "@/lib/use-nutrition-viz-prefs";
 
 type Food = {
   id: string;
@@ -72,6 +74,7 @@ export function MacrosLogPanel({ date }: Props) {
   const queryClient = useQueryClient();
   const today = todayISODate();
   const isPastDate = date < today;
+  const { prefs: vizPrefs } = useNutritionVizPrefs();
   const [showManual, setShowManual] = useState(false);
   const [name, setName] = useState("");
   const [proteinG, setProteinG] = useState(0);
@@ -138,12 +141,6 @@ export function MacrosLogPanel({ date }: Props) {
   const calWarned = warnings.some((w) => w.metric === "calories");
   const proteinNote = warnings.find((w) => w.metric === "protein");
   const carbWarned = warnings.some((w) => w.metric === "carbs");
-  const proteinSegments = proteinBarSegments(
-    totals.proteinG,
-    proteinMin,
-    proteinGood,
-    proteinMax,
-  );
   const proteinToneClass =
     proteinNote?.tone === "hard"
       ? "text-[var(--protein-hard)]"
@@ -152,6 +149,15 @@ export function MacrosLogPanel({ date }: Props) {
         : proteinNote?.tone === "warn"
           ? "text-[var(--warn)]"
           : "";
+  const proteinNoteLabel = proteinNote
+    ? proteinNote.tone === "warn" && totals.proteinG > proteinMax
+      ? "Past range max"
+      : proteinNote.tone === "warn"
+        ? "Below 1.61 g/kg floor"
+        : proteinNote.tone === "soft"
+          ? "Good — could be better"
+          : "Good enough"
+    : null;
 
   async function refreshAfterWrite() {
     await invalidateAfterMacros(queryClient, date);
@@ -410,175 +416,26 @@ export function MacrosLogPanel({ date }: Props) {
   return (
     <div className="space-y-6">
       <section className="space-y-4">
-        {hasTargets ? (
-          <>
-            <div className="grid grid-cols-2 gap-3 sm:gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-wider text-[var(--muted)]">
-                  Protein
-                </p>
-                <p className="text-2xl sm:text-3xl font-semibold">
-                  {Math.round(totals.proteinG)}
-                  <span className="text-base text-[var(--muted)] font-normal">
-                    g
-                  </span>
-                </p>
-                <p className="text-xs text-[var(--accent)]">
-                  {proteinRemainingLabel(
-                    totals.proteinG,
-                    proteinMin,
-                    proteinMax,
-                  )}
-                </p>
-                {proteinNote ? (
-                  <p className={`text-xs mt-0.5 ${proteinToneClass}`}>
-                    {proteinNote.tone === "warn" &&
-                    totals.proteinG > proteinMax
-                      ? "Past range max"
-                      : proteinNote.tone === "warn"
-                        ? "Below 1.61 g/kg floor"
-                        : proteinNote.tone === "soft"
-                          ? "Good — could be better"
-                          : "Good enough"}
-                  </p>
-                ) : null}
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-wider text-[var(--muted)]">
-                  Calories
-                </p>
-                <p
-                  className={`text-2xl sm:text-3xl font-semibold ${
-                    calWarned ? "text-[var(--warn)]" : ""
-                  }`}
-                >
-                  {Math.round(totals.calories)}
-                </p>
-                <p
-                  className={`text-xs ${
-                    calWarned ? "text-[var(--warn)]" : "text-[var(--accent)]"
-                  }`}
-                >
-                  {remainingLabel(totals.calories, calorieTarget, " kcal")}
-                </p>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div>
-                <div className="flex justify-between text-xs text-[var(--muted)] mb-1">
-                  <span>Protein · 1.61–2.2 g/kg</span>
-                  <span className={proteinToneClass || undefined}>
-                    {Math.round(totals.proteinG)}g
-                    {proteinMin > 0
-                      ? ` · floor ${proteinMin} · max ${proteinMax}`
-                      : ""}
-                  </span>
-                </div>
-                <div className="relative h-2 rounded-full bg-[var(--surface-2)] overflow-hidden">
-                  {proteinSegments.map((seg) => (
-                    <div
-                      key={seg.key}
-                      className={`absolute top-0 bottom-0 transition-all duration-500 ${proteinBarFillClass(seg.key)}`}
-                      style={{
-                        left: `${seg.leftPct}%`,
-                        width: `${seg.widthPct}%`,
-                      }}
-                    />
-                  ))}
-                  {proteinMax > 0 ? (
-                    <>
-                      <span
-                        className="absolute top-0 bottom-0 w-px bg-white/25"
-                        style={{ left: `${(proteinMin / proteinMax) * 100}%` }}
-                        title="1.61 g/kg floor"
-                      />
-                      <span
-                        className="absolute top-0 bottom-0 w-px bg-white/40"
-                        style={{ left: `${(proteinGood / proteinMax) * 100}%` }}
-                        title="1.85 g/kg strong zone"
-                      />
-                    </>
-                  ) : null}
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between text-xs text-[var(--muted)] mb-1">
-                  <span>Calories</span>
-                  <span className={calWarned ? "text-[var(--warn)]" : ""}>
-                    {Math.round(totals.calories)}/{calorieTarget}
-                  </span>
-                </div>
-                <div className="h-2 rounded-full bg-[var(--surface-2)] overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-500 ${
-                      calWarned
-                        ? "bg-[var(--warn)]"
-                        : "bg-[var(--accent)]/70"
-                    }`}
-                    style={{
-                      width: `${Math.min(100, progressRatio(totals.calories, calorieTarget) * 100)}%`,
-                    }}
-                  />
-                </div>
-              </div>
-              {targets ? (
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span
-                      className={
-                        fatWarned ? "text-[var(--warn)]" : "text-[var(--muted)]"
-                      }
-                    >
-                      Fat{fatWarned ? " — over" : ""}
-                    </span>
-                    <span
-                      className={
-                        fatWarned ? "text-[var(--warn)]" : "text-[var(--muted)]"
-                      }
-                    >
-                      {Math.round(totals.fatG)}/{targets.fatG}g
-                    </span>
-                  </div>
-                  <div className="h-2 rounded-full bg-[var(--surface-2)] overflow-hidden">
-                    <div
-                      className={`h-full transition-all duration-500 ${
-                        fatWarned ? "bg-[var(--warn)]" : "bg-[var(--accent)]/50"
-                      }`}
-                      style={{
-                        width: `${Math.min(100, progressRatio(totals.fatG, targets.fatG) * 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              ) : null}
-              {targets?.fiberG ? (
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-[var(--muted)]">Fiber</span>
-                    <span className="text-[var(--muted)]">
-                      {Math.round(totals.fiberG ?? 0)}/{targets.fiberG}g
-                      {(() => {
-                        const rem = remainingLabel(
-                          totals.fiberG ?? 0,
-                          targets.fiberG,
-                          "g",
-                        );
-                        return rem ? ` · ${rem}` : "";
-                      })()}
-                    </span>
-                  </div>
-                  <div className="h-2 rounded-full bg-[var(--surface-2)] overflow-hidden">
-                    <div
-                      className="h-full transition-all duration-500 bg-[var(--accent)]/50"
-                      style={{
-                        width: `${Math.min(100, progressRatio(totals.fiberG ?? 0, targets.fiberG) * 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </>
+        {hasTargets && targets ? (
+          <MacroProgressViz
+            totals={totals}
+            targets={{
+              proteinG: targets.proteinG,
+              proteinMinG: proteinMin,
+              proteinGoodG: proteinGood,
+              proteinMaxG: proteinMax,
+              calorieTarget,
+              carbsG: targets.carbsG,
+              fatG: targets.fatG,
+              fiberG: targets.fiberG,
+            }}
+            prefs={vizPrefs}
+            proteinToneClass={proteinToneClass}
+            proteinNoteLabel={proteinNoteLabel}
+            calWarned={calWarned}
+            fatWarned={fatWarned}
+            carbWarned={carbWarned}
+          />
         ) : (
           <p className="text-sm text-[var(--muted)]">
             Set your daily targets in{" "}
@@ -591,26 +448,6 @@ export function MacrosLogPanel({ date }: Props) {
             to see how much is left today.
           </p>
         )}
-        <p className="text-xs text-[var(--muted)]">
-          Carbs{" "}
-          <span className={carbWarned ? "text-[var(--warn)]" : undefined}>
-            {Math.round(totals.carbsG)}g
-            {targets ? ` / ${targets.carbsG}g` : ""}
-          </span>
-          {" · "}
-          Fat{" "}
-          <span className={fatWarned ? "text-[var(--warn)] font-medium" : undefined}>
-            {Math.round(totals.fatG)}g
-            {targets ? ` / ${targets.fatG}g` : ""}
-            {fatWarned ? " over" : ""}
-          </span>
-          {" · "}
-          Fiber{" "}
-          <span>
-            {Math.round(totals.fiberG ?? 0)}g
-            {targets?.fiberG ? ` / ${targets.fiberG}g` : ""}
-          </span>
-        </p>
       </section>
 
       <MacroWarningsBanner warnings={warnings} />

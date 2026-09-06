@@ -12,6 +12,7 @@ import {
   type MuscleGroup,
 } from "@/lib/exercises";
 import type { HeatMode } from "@/lib/muscle-tonnage";
+import { useNutritionVizPrefs } from "@/lib/use-nutrition-viz-prefs";
 
 type MuscleRow = {
   muscle: MuscleGroup;
@@ -50,11 +51,20 @@ const MUSCLE_TO_SLUG: Partial<Record<MuscleGroup, Slug[]>> = {
   hip_flexors: ["adductors"],
 };
 
-const HEAT_COLORS = ["#c45c3e", "#e07050", "#f09070"] as const;
+const HEAT_COLORS_DARK = ["#c45c3e", "#e07050", "#f09070"] as const;
+/** Low → mid → high: pale apricot, orange, deep crimson */
+const HEAT_COLORS_LIGHT = ["#f0c9a8", "#e8724a", "#b82e22"] as const;
 
-function heatColor(intensity: number): string {
+function heatColor(intensity: number, light: boolean): string {
   if (intensity <= 0) return "transparent";
   const t = Math.min(1, intensity);
+  if (light) {
+    // Spread hue + lightness so soft vs hard stay easy to tell apart
+    const h = 30 - t * 26; // apricot → crimson
+    const s = 62 + t * 28;
+    const l = 70 - t * 36; // light peach → deep red
+    return `hsl(${h} ${s}% ${l}%)`;
+  }
   const r = Math.round(90 + t * 165);
   const g = Math.round(90 - t * 55);
   const b = Math.round(95 - t * 70);
@@ -75,6 +85,9 @@ export function BodyHeatmap({
   regionCounts = {},
   dateLabel,
 }: Props) {
+  const { prefs } = useNutritionVizPrefs();
+  const light = prefs.palette === "daylight" || prefs.palette === "fog";
+
   const slugIntensity = useMemo(() => {
     const map = new Map<Slug, number>();
     for (const row of muscles) {
@@ -92,11 +105,11 @@ export function BodyHeatmap({
       parts.push({
         slug,
         intensity: t > 0.66 ? 3 : t > 0.33 ? 2 : 1,
-        color: heatColor(t),
+        color: heatColor(t, light),
       });
     }
     return parts;
-  }, [slugIntensity]);
+  }, [slugIntensity, light]);
 
   const topMuscles = muscles
     .filter((m) => m.muscle !== "cardiovascular")
@@ -110,6 +123,11 @@ export function BodyHeatmap({
 
   const regionMax = Math.max(1, ...activeRegions.map(([, n]) => n), 0);
 
+  const defaultFill = light ? "#c5ced6" : "#3a3a42";
+  const border = light ? "#8a96a3" : "#5a5a62";
+  const heatColors = light ? HEAT_COLORS_LIGHT : HEAT_COLORS_DARK;
+  const chipTextThreshold = light ? 0.4 : 0.45;
+
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 space-y-4">
       <div className="flex items-baseline justify-between gap-2">
@@ -118,8 +136,8 @@ export function BodyHeatmap({
         </p>
         <p className="text-[10px] text-[var(--muted)] text-right max-w-[11rem] leading-snug">
           {mode === "sets"
-            ? "Redder = closer to your recent best day for that muscle"
-            : "Redder = closer to your recent best volume day"}
+            ? "Warmer = closer to your recent best day for that muscle"
+            : "Warmer = closer to your recent best volume day"}
         </p>
       </div>
 
@@ -131,9 +149,9 @@ export function BodyHeatmap({
               side="front"
               gender="male"
               scale={0.75}
-              colors={[...HEAT_COLORS]}
-              border="#5a5a62"
-              defaultFill="#3a3a42"
+              colors={[...heatColors]}
+              border={border}
+              defaultFill={defaultFill}
               defaultStroke="none"
             />
           </div>
@@ -146,9 +164,9 @@ export function BodyHeatmap({
               side="back"
               gender="male"
               scale={0.75}
-              colors={[...HEAT_COLORS]}
-              border="#5a5a62"
-              defaultFill="#3a3a42"
+              colors={[...heatColors]}
+              border={border}
+              defaultFill={defaultFill}
               defaultStroke="none"
             />
           </div>
@@ -163,8 +181,11 @@ export function BodyHeatmap({
               key={m.muscle}
               className="rounded-full px-2.5 py-1 text-xs font-medium"
               style={{
-                background: heatColor(m.intensity),
-                color: m.intensity > 0.45 ? "#fff" : "var(--foreground)",
+                background: heatColor(m.intensity, light),
+                color:
+                  m.intensity > chipTextThreshold
+                    ? "#fff"
+                    : "var(--foreground)",
               }}
             >
               {m.label || MUSCLE_LABELS[m.muscle]} ·{" "}
@@ -181,8 +202,11 @@ export function BodyHeatmap({
               key={r}
               className="rounded-full px-2.5 py-1 text-xs font-medium"
               style={{
-                background: heatColor(n / regionMax),
-                color: n / regionMax > 0.45 ? "#fff" : "var(--foreground)",
+                background: heatColor(n / regionMax, light),
+                color:
+                  n / regionMax > chipTextThreshold
+                    ? "#fff"
+                    : "var(--foreground)",
               }}
             >
               {BODY_REGION_LABELS[r]} · {formatValue(mode, n)}

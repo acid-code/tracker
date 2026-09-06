@@ -9,9 +9,14 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-
-const axis = { stroke: "#6b7280", fontSize: 11 };
-const grid = { stroke: "#2a2a2a" };
+import {
+  chartAccent,
+  chartAxis,
+  chartCursorStroke,
+  chartGrid,
+  chartMutedLine,
+  chartTooltipStyle,
+} from "@/lib/chart-theme";
 
 export function LiftProgressChart({
   data,
@@ -38,30 +43,30 @@ export function LiftProgressChart({
           margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
           accessibilityLayer={false}
         >
-          <CartesianGrid strokeDasharray="3 3" {...grid} />
-          <XAxis dataKey="date" tick={axis} tickFormatter={(v) => v.slice(5)} />
-          <YAxis tick={axis} width={40} />
+          <CartesianGrid strokeDasharray="3 3" {...chartGrid} />
+          <XAxis
+            dataKey="date"
+            tick={chartAxis}
+            tickFormatter={(v) => v.slice(5)}
+          />
+          <YAxis tick={chartAxis} width={40} />
           <Tooltip
-            cursor={{ stroke: "rgba(125, 211, 192, 0.35)", strokeWidth: 1 }}
-            contentStyle={{
-              background: "#171717",
-              border: "1px solid #2a2a2a",
-              borderRadius: 8,
-            }}
+            cursor={{ stroke: chartCursorStroke, strokeWidth: 1 }}
+            contentStyle={chartTooltipStyle}
           />
           <Line
             type="monotone"
             dataKey="bestWeight"
-            stroke="#7dd3c0"
+            stroke={chartAccent}
             strokeWidth={2}
-            dot={{ r: 3 }}
+            dot={{ r: 3, fill: chartAccent }}
             activeDot={false}
             name="Best set (kg)"
           />
           <Line
             type="monotone"
             dataKey="volume"
-            stroke="#737373"
+            stroke={chartMutedLine}
             strokeWidth={1.5}
             dot={false}
             activeDot={false}

@@ -10,9 +10,15 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-
-const axis = { stroke: "#6b7280", fontSize: 11 };
-const grid = { stroke: "#2a2a2a" };
+import {
+  chartAccent,
+  chartAxis,
+  chartCursorStroke,
+  chartDimLine,
+  chartGrid,
+  chartProtein,
+  chartTooltipStyle,
+} from "@/lib/chart-theme";
 
 export function NutritionChart({
   data,
@@ -42,24 +48,24 @@ export function NutritionChart({
           margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
           accessibilityLayer={false}
         >
-          <CartesianGrid strokeDasharray="3 3" {...grid} />
-          <XAxis dataKey="date" tick={axis} tickFormatter={(v) => v.slice(5)} />
-          <YAxis yAxisId="p" tick={axis} width={36} />
-          <YAxis yAxisId="c" orientation="right" tick={axis} width={40} />
+          <CartesianGrid strokeDasharray="3 3" {...chartGrid} />
+          <XAxis
+            dataKey="date"
+            tick={chartAxis}
+            tickFormatter={(v) => v.slice(5)}
+          />
+          <YAxis yAxisId="p" tick={chartAxis} width={36} />
+          <YAxis yAxisId="c" orientation="right" tick={chartAxis} width={40} />
           <Tooltip
-            cursor={{ stroke: "rgba(125, 211, 192, 0.35)", strokeWidth: 1 }}
-            contentStyle={{
-              background: "#171717",
-              border: "1px solid #2a2a2a",
-              borderRadius: 8,
-            }}
+            cursor={{ stroke: chartCursorStroke, strokeWidth: 1 }}
+            contentStyle={chartTooltipStyle}
           />
           <Legend />
           <Line
             yAxisId="p"
             type="monotone"
             dataKey="proteinG"
-            stroke="#7dd3c0"
+            stroke={chartProtein}
             strokeWidth={2}
             dot={false}
             activeDot={false}
@@ -70,7 +76,7 @@ export function NutritionChart({
               yAxisId="p"
               type="monotone"
               dataKey="proteinTarget"
-              stroke="#4b5563"
+              stroke={chartDimLine}
               strokeDasharray="4 4"
               dot={false}
               activeDot={false}
@@ -81,7 +87,7 @@ export function NutritionChart({
             yAxisId="c"
             type="monotone"
             dataKey="calories"
-            stroke="#a3a3a3"
+            stroke={chartAccent}
             strokeWidth={1.5}
             dot={false}
             activeDot={false}

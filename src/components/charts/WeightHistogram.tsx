@@ -10,9 +10,16 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-
-const axis = { stroke: "#6b7280", fontSize: 11 };
-const grid = { stroke: "#2a2a2a" };
+import {
+  chartAccent,
+  chartAxis,
+  chartBarMuted,
+  chartCursorFill,
+  chartGrid,
+  chartTooltipItemStyle,
+  chartTooltipLabelStyle,
+  chartTooltipStyle,
+} from "@/lib/chart-theme";
 
 type Row = { date: string; weightKg: number };
 
@@ -43,29 +50,24 @@ export function WeightHistogram({
           barCategoryGap="18%"
           accessibilityLayer={false}
         >
-          <CartesianGrid strokeDasharray="3 3" vertical={false} {...grid} />
+          <CartesianGrid strokeDasharray="3 3" vertical={false} {...chartGrid} />
           <XAxis
             dataKey="date"
-            tick={axis}
+            tick={chartAxis}
             tickFormatter={(v) => v.slice(5)}
             interval="preserveStartEnd"
           />
           <YAxis
-            tick={axis}
+            tick={chartAxis}
             domain={[min - 1, max + 1]}
             width={36}
             tickFormatter={(v) => String(v)}
           />
           <Tooltip
-            cursor={{ fill: "rgba(125, 211, 192, 0.1)" }}
-            contentStyle={{
-              background: "#171717",
-              border: "1px solid #2a2a2a",
-              borderRadius: 8,
-              color: "#e8e8e8",
-            }}
-            labelStyle={{ color: "#a3a3a3" }}
-            itemStyle={{ color: "#e8e8e8" }}
+            cursor={{ fill: chartCursorFill }}
+            contentStyle={chartTooltipStyle}
+            labelStyle={chartTooltipLabelStyle}
+            itemStyle={chartTooltipItemStyle}
             formatter={(value) => [`${value} kg`, "Weight"]}
             labelFormatter={(label) => label}
           />
@@ -80,8 +82,8 @@ export function WeightHistogram({
                 key={entry.date}
                 fill={
                   highlightDate && entry.date === highlightDate
-                    ? "#7dd3c0"
-                    : "rgba(125, 211, 192, 0.45)"
+                    ? chartAccent
+                    : chartBarMuted
                 }
               />
             ))}
