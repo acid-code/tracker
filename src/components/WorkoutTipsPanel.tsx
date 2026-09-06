@@ -7,6 +7,10 @@ import { apiFetch } from "@/lib/api-fetch";
 import type { CoachSessionItem, CoachSessionPlan } from "@/lib/ai-coach";
 import { invalidateAfterLifts } from "@/lib/query-invalidate";
 import { queryKeys } from "@/lib/query-keys";
+import {
+  ClearDraftButton,
+  usePersistedDraft,
+} from "@/lib/use-persisted-draft";
 
 type TipRange = "7d" | "14d" | "all";
 
@@ -321,7 +325,9 @@ function TipCard({
 export function WorkoutTipsPanel({ date }: { date: string }) {
   const queryClient = useQueryClient();
   const field = fieldClass();
-  const [prompt, setPrompt] = useState("");
+  const draft = usePersistedDraft("recomp.workout-tips-draft");
+  const prompt = draft.text;
+  const setPrompt = draft.setText;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [range, setRange] = useState<TipRange>("7d");
@@ -347,7 +353,6 @@ export function WorkoutTipsPanel({ date }: { date: string }) {
           date,
         }),
       });
-      setPrompt("");
       setOpenId(data.tip.id);
       await queryClient.invalidateQueries({ queryKey: ["workout-tips"] });
     } catch (err) {
@@ -367,18 +372,27 @@ export function WorkoutTipsPanel({ date }: { date: string }) {
             concrete plan changes, you may get a Plan you can save under Plan.
           </p>
         </div>
-        <textarea
-          className={`${field} min-h-[96px] resize-y`}
-          placeholder='e.g. "what should I train today based on recent workouts and my plans?"'
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              if (!loading) void ask();
-            }
-          }}
-        />
+        <div className="relative">
+          <textarea
+            className={`${field} min-h-[96px] resize-y w-full pr-10`}
+            placeholder='e.g. "what should I train today based on recent workouts and my plans?"'
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (!loading) void ask();
+              }
+            }}
+          />
+          {prompt ? (
+            <ClearDraftButton
+              onClear={draft.clear}
+              disabled={loading}
+              className="absolute top-2 right-2"
+            />
+          ) : null}
+        </div>
         <button
           type="button"
           disabled={loading}

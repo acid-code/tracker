@@ -1,12 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { nutritionFieldClass } from "@/components/nutrition-ui";
 import { apiFetch } from "@/lib/api-fetch";
 import { caloriesFromMacros, formatMacroShort } from "@/lib/macros";
 import { invalidateAfterMacros } from "@/lib/query-invalidate";
 import { resizeImageForUpload } from "@/lib/resize-image";
+import { useProfileUserId, ClearDraftButton } from "@/lib/use-persisted-draft";
+import {
+  readUserStorageItem,
+  removeUserStorageItem,
+  writeUserStorageItem,
+} from "@/lib/user-storage";
 
 type Guess = {
   name: string;
@@ -19,9 +25,16 @@ type Guess = {
   rationale: string;
 };
 
+type GuesserCache = {
+  description: string;
+  guess: Guess | null;
+};
+
 type Props = {
   date: string;
 };
+
+const STORAGE_BASE = "recomp.macros-guess-state";
 
 function round1(n: number) {
   return Math.round(n * 10) / 10;
@@ -33,22 +46,88 @@ function sleep(ms: number) {
 
 export function MacrosGuesserPanel({ date }: Props) {
   const queryClient = useQueryClient();
+  const userId = useProfileUserId();
   const field = nutritionFieldClass();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [description, setDescription] = useState("");
+  const [description, setDescriptionState] = useState("");
+  const [guess, setGuessState] = useState<Guess | null>(null);
   const [describingPhoto, setDescribingPhoto] = useState(false);
   const [guessing, setGuessing] = useState(false);
   const [logging, setLogging] = useState(false);
   const [error, setError] = useState("");
   const [loggedHint, setLoggedHint] = useState("");
-  const [guess, setGuess] = useState<Guess | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+
+  const persist = useCallback(
+    (nextDescription: string, nextGuess: Guess | null) => {
+      if (!userId) return;
+      if (!nextDescription && !nextGuess) {
+        removeUserStorageItem(STORAGE_BASE, userId);
+        return;
+      }
+      writeUserStorageItem(
+        STORAGE_BASE,
+        userId,
+        JSON.stringify({
+          description: nextDescription,
+          guess: nextGuess,
+        } satisfies GuesserCache),
+      );
+    },
+    [userId],
+  );
+
+  useEffect(() => {
+    if (!userId) return;
+    const raw = readUserStorageItem(STORAGE_BASE, userId);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as GuesserCache;
+      setDescriptionState((cur) => {
+        if (cur) return cur;
+        return typeof parsed.description === "string" ? parsed.description : "";
+      });
+      setGuessState((cur) => {
+        if (cur) return cur;
+        return parsed.guess && typeof parsed.guess === "object"
+          ? parsed.guess
+          : null;
+      });
+    } catch {
+      removeUserStorageItem(STORAGE_BASE, userId);
+    }
+  }, [userId]);
 
   useEffect(() => {
     return () => {
       if (photoPreview) URL.revokeObjectURL(photoPreview);
     };
   }, [photoPreview]);
+
+  function setDescription(next: string) {
+    setDescriptionState(next);
+    setGuessState((g) => {
+      persist(next, g);
+      return g;
+    });
+  }
+
+  function setGuess(next: Guess | null) {
+    setGuessState(next);
+    setDescriptionState((d) => {
+      persist(d, next);
+      return d;
+    });
+  }
+
+  function clearAll() {
+    setDescriptionState("");
+    setGuessState(null);
+    setError("");
+    setLoggedHint("");
+    clearPhotoPreview();
+    if (userId) removeUserStorageItem(STORAGE_BASE, userId);
+  }
 
   async function runGuess(textOverride?: string) {
     const text = (textOverride ?? description).trim();
@@ -61,7 +140,7 @@ export function MacrosGuesserPanel({ date }: Props) {
         method: "POST",
         body: JSON.stringify({ description: text }),
       });
-      setGuess({
+      const next: Guess = {
         name: data.guess.name,
         servingLabel: data.guess.servingLabel || "1 serving",
         proteinG: data.guess.proteinG,
@@ -76,7 +155,8 @@ export function MacrosGuesserPanel({ date }: Props) {
             data.guess.fatG,
           ),
         rationale: data.guess.rationale || "",
-      });
+      };
+      setGuess(next);
     } catch (err) {
       setGuess(null);
       setError(err instanceof Error ? err.message : "Guess failed");
@@ -127,7 +207,7 @@ export function MacrosGuesserPanel({ date }: Props) {
   }
 
   function patchGuess(partial: Partial<Guess>) {
-    setGuess((g) => {
+    setGuessState((g) => {
       if (!g) return g;
       const next = { ...g, ...partial };
       if (
@@ -141,6 +221,7 @@ export function MacrosGuesserPanel({ date }: Props) {
           next.fatG,
         );
       }
+      persist(description, next);
       return next;
     });
   }
@@ -166,9 +247,7 @@ export function MacrosGuesserPanel({ date }: Props) {
       });
       await invalidateAfterMacros(queryClient, date);
       setLoggedHint(`Logged “${guess.name.trim()}”`);
-      setGuess(null);
-      setDescription("");
-      clearPhotoPreview();
+      clearAll();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not log food");
     } finally {
@@ -182,6 +261,7 @@ export function MacrosGuesserPanel({ date }: Props) {
     : guessing
       ? "Guessing macros…"
       : "Guess macros";
+  const showClear = Boolean(description || guess);
 
   return (
     <div className="space-y-6 max-w-lg">
@@ -229,18 +309,27 @@ export function MacrosGuesserPanel({ date }: Props) {
             </div>
           ) : null}
         </div>
-        <textarea
-          className={`${field} min-h-[120px] resize-y`}
-          placeholder="e.g. chicken stir-fry, I used olive oil instead of butter, about a big plate…"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              if (!busy) void runGuess();
-            }
-          }}
-        />
+        <div className="relative">
+          <textarea
+            className={`${field} min-h-[120px] resize-y w-full pr-10`}
+            placeholder="e.g. chicken stir-fry, I used olive oil instead of butter, about a big plate…"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (!busy) void runGuess();
+              }
+            }}
+          />
+          {showClear ? (
+            <ClearDraftButton
+              onClear={clearAll}
+              disabled={busy}
+              className="absolute top-2 right-2"
+            />
+          ) : null}
+        </div>
         <button
           type="button"
           disabled={busy || description.trim().length < 2}

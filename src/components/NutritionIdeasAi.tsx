@@ -14,6 +14,10 @@ import {
   invalidateAfterMenu,
 } from "@/lib/query-invalidate";
 import { queryKeys } from "@/lib/query-keys";
+import {
+  ClearDraftButton,
+  usePersistedDraft,
+} from "@/lib/use-persisted-draft";
 
 type Ingredient = { name: string; amount: string };
 type Step = { text: string };
@@ -621,7 +625,9 @@ function ManualMealForm({ onCreated }: { onCreated: () => void }) {
 
 export function NutritionIdeasAi({ date }: { date: string }) {
   const field = nutritionFieldClass();
-  const [prompt, setPrompt] = useState("");
+  const promptDraft = usePersistedDraft("recomp.nutrition-ideas-draft");
+  const prompt = promptDraft.text;
+  const setPrompt = promptDraft.setText;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [tip, setTip] = useState<string | null>(null);
@@ -685,18 +691,27 @@ export function NutritionIdeasAi({ date }: { date: string }) {
             full recipe.
           </p>
         </div>
-        <textarea
-          className={`${field} min-h-[96px] resize-y`}
-          placeholder="e.g. high-protein dinner under 500 kcal, something with chicken, quick lunch I can cook…"
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              if (!loading) void ask();
-            }
-          }}
-        />
+        <div className="relative">
+          <textarea
+            className={`${field} min-h-[96px] resize-y w-full pr-10`}
+            placeholder="e.g. high-protein dinner under 500 kcal, something with chicken, quick lunch I can cook…"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (!loading) void ask();
+              }
+            }}
+          />
+          {prompt ? (
+            <ClearDraftButton
+              onClear={promptDraft.clear}
+              disabled={loading}
+              className="absolute top-2 right-2"
+            />
+          ) : null}
+        </div>
         <button
           type="button"
           disabled={loading || prompt.trim().length < 2}

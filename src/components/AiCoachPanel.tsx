@@ -1,7 +1,18 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api-fetch";
+import { todayISODate } from "@/lib/tdee";
+import {
+  ClearDraftButton,
+  usePersistedDraft,
+  useProfileUserId,
+} from "@/lib/use-persisted-draft";
+import {
+  readUserStorageItem,
+  removeUserStorageItem,
+  writeUserStorageItem,
+} from "@/lib/user-storage";
 
 export type CoachAdvicePayload = {
   scope: "today" | "workout" | "sleep";
@@ -12,12 +23,21 @@ export type CoachAdvicePayload = {
   model: string;
 };
 
+type CachedAdvice = {
+  date: string;
+  advice: CoachAdvicePayload;
+};
+
 type Props = {
   scope: "today" | "workout" | "sleep";
   title?: string;
   placeholder?: string;
   buttonLabel?: string;
 };
+
+function cacheBase(scope: string) {
+  return `recomp.ai-summary.${scope}`;
+}
 
 function BulletBlock({
   label,
@@ -52,12 +72,34 @@ export function AiCoachPanel({
   placeholder = "Optional focus, e.g. more protein / knee-friendly cardio",
   buttonLabel = "Get AI tips",
 }: Props) {
+  const userId = useProfileUserId();
+  const draft = usePersistedDraft(`recomp.ai-summary-draft.${scope}`);
   const [loading, setLoading] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
-  const [userRequest, setUserRequest] = useState("");
   const [advice, setAdvice] = useState<CoachAdvicePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    const raw = readUserStorageItem(cacheBase(scope), userId);
+    if (!raw) {
+      setAdvice(null);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw) as CachedAdvice;
+      if (parsed.date === todayISODate() && parsed.advice?.summary) {
+        setAdvice(parsed.advice);
+      } else {
+        removeUserStorageItem(cacheBase(scope), userId);
+        setAdvice(null);
+      }
+    } catch {
+      removeUserStorageItem(cacheBase(scope), userId);
+      setAdvice(null);
+    }
+  }, [userId, scope]);
 
   async function run() {
     setLoading(true);
@@ -67,12 +109,21 @@ export function AiCoachPanel({
         method: "POST",
         body: JSON.stringify({
           scope,
-          userRequest: userRequest.trim() || undefined,
+          userRequest: draft.text.trim() || undefined,
         }),
       });
       setAdvice(data);
       setShowPrompt(false);
-      setUserRequest("");
+      if (userId) {
+        writeUserStorageItem(
+          cacheBase(scope),
+          userId,
+          JSON.stringify({
+            date: todayISODate(),
+            advice: data,
+          } satisfies CachedAdvice),
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "AI tips failed");
     } finally {
@@ -104,16 +155,23 @@ export function AiCoachPanel({
           }
           className="shrink-0 rounded-md bg-[var(--accent)] text-[var(--background)] px-3 py-2.5 text-xs font-medium min-h-[44px] disabled:opacity-50"
         >
-          {loading ? "Thinking…" : showPrompt ? "Cancel" : buttonLabel}
+          {loading
+            ? "Thinking…"
+            : showPrompt
+              ? "Cancel"
+              : advice
+                ? "New summary"
+                : buttonLabel}
         </button>
       </div>
 
       {showPrompt ? (
         <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 flex gap-2 items-end">
+        <div className="relative flex-1">
           <textarea
             ref={inputRef}
-            value={userRequest}
-            onChange={(e) => setUserRequest(e.target.value)}
+            value={draft.text}
+            onChange={(e) => draft.setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -121,17 +179,25 @@ export function AiCoachPanel({
               }
             }}
             placeholder={placeholder}
-            className="flex-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs placeholder:text-[var(--muted)] resize-none min-h-[52px]"
+            className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 pr-9 text-xs placeholder:text-[var(--muted)] resize-none min-h-[52px]"
             rows={2}
           />
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => void run()}
-            className="shrink-0 rounded-md bg-[var(--accent)] text-[var(--background)] px-3 py-2.5 text-xs font-medium min-h-[44px] disabled:opacity-50"
-          >
-            {loading ? "…" : "Send"}
-          </button>
+          {draft.text ? (
+            <ClearDraftButton
+              onClear={draft.clear}
+              disabled={loading}
+              className="absolute top-1.5 right-1.5"
+            />
+          ) : null}
+        </div>
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => void run()}
+          className="shrink-0 rounded-md bg-[var(--accent)] text-[var(--background)] px-3 py-2.5 text-xs font-medium min-h-[44px] disabled:opacity-50"
+        >
+          {loading ? "…" : "Send"}
+        </button>
         </div>
       ) : null}
 
