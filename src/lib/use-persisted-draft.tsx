@@ -7,6 +7,7 @@ import { queryKeys } from "@/lib/query-keys";
 import {
   readUserStorageItem,
   removeUserStorageItem,
+  writeLastUserId,
   writeUserStorageItem,
 } from "@/lib/user-storage";
 
@@ -15,7 +16,11 @@ export function useProfileUserId() {
     queryKey: queryKeys.profile,
     queryFn: () => apiFetch<{ userId?: string }>("/api/profile"),
   });
-  return profile.data?.userId ?? null;
+  const userId = profile.data?.userId ?? null;
+  useEffect(() => {
+    if (userId) writeLastUserId(userId);
+  }, [userId]);
+  return userId;
 }
 
 /** Persist a free-text draft in user-scoped localStorage. */
