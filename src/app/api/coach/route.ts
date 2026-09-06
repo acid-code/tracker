@@ -1,10 +1,14 @@
 import { jsonError, jsonOk, requireUser } from "@/lib/api";
-import { coachWithAI, type CoachScope } from "@/lib/ai-coach";
+import {
+  coachWithAI,
+  dailyTipWithAI,
+  type CoachScope,
+} from "@/lib/ai-coach";
 
 /**
  * POST /api/coach
- * Shared AI coaching for today summary, workout tips, or sleep.
- * Body: { scope: "today" | "workout" | "sleep", userRequest?: string }
+ * Shared AI coaching for today summary, workout tips, sleep, or daily tip.
+ * Body: { scope: "today" | "workout" | "sleep" | "daily_tip", userRequest?: string }
  */
 export async function POST(req: Request) {
   const authz = await requireUser();
@@ -13,9 +17,22 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const scope = String(body?.scope || "today") as CoachScope;
-    if (scope !== "today" && scope !== "workout" && scope !== "sleep") {
-      return jsonError('scope must be "today", "workout", or "sleep"');
+    if (
+      scope !== "today" &&
+      scope !== "workout" &&
+      scope !== "sleep" &&
+      scope !== "daily_tip"
+    ) {
+      return jsonError(
+        'scope must be "today", "workout", "sleep", or "daily_tip"',
+      );
     }
+
+    if (scope === "daily_tip") {
+      const tip = await dailyTipWithAI(authz.userId);
+      return jsonOk({ scope, ...tip });
+    }
+
     const userRequest =
       typeof body?.userRequest === "string"
         ? body.userRequest.trim()

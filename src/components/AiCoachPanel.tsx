@@ -93,7 +93,7 @@ export function AiCoachPanel({
             {title}
           </p>
           <p className="text-sm text-[var(--muted)] mt-1">
-            Uses your profile Target, recent food, and workouts.
+            Uses your Target, food/workout trends, and today&apos;s macro check.
           </p>
         </div>
         <button

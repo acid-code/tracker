@@ -12,4 +12,5 @@ export const queryKeys = {
   workoutPlans: ["workout-plans"] as const,
   checklists: (date: string) => ["checklists", date] as const,
   checklistHistory: (date: string) => ["checklist-history", date] as const,
+  dailyTip: ["daily-tip"] as const,
 } as const;

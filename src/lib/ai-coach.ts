@@ -1,8 +1,9 @@
 import { and, desc, eq, gte } from "drizzle-orm";
 import { getDb, schema } from "@/db";
-import { aiChatJson, extractJsonObject } from "@/lib/ai-client";
+import { aiChatJson, extractJsonObject, parseJsonObjectLoose } from "@/lib/ai-client";
 import { EXERCISES, getExercise } from "@/lib/exercises";
 import { sumMacros } from "@/lib/macros";
+import { buildNutritionCoach } from "@/lib/nutrition-coach";
 import {
   DEFAULT_DEFICIT_KCAL,
   DEFAULT_PROTEIN_PER_KG,
@@ -12,7 +13,7 @@ import {
 } from "@/lib/tdee";
 import { listWorkoutPlans } from "@/lib/workout-plans";
 
-export type CoachScope = "today" | "workout" | "sleep";
+export type CoachScope = "today" | "workout" | "sleep" | "daily_tip";
 
 export type CoachSessionItem = {
   /** Present when the item was taken from an existing saved plan row. */
@@ -325,6 +326,32 @@ async function buildTodayContext(userId: string) {
         ) / 10
       : null;
 
+  const recompCheck = buildNutritionCoach(
+    {
+      calories: todayTotals.calories,
+      proteinG: todayTotals.proteinG,
+      carbsG: todayTotals.carbsG,
+      fatG: todayTotals.fatG,
+      fiberG: todayTotals.fiberG || 0,
+    },
+    {
+      calorieTarget: targets.calorieTarget,
+      proteinG: targets.proteinG,
+      proteinMinG: targets.proteinMinG,
+      proteinGoodG: targets.proteinGoodG,
+      proteinMaxG: targets.proteinMaxG,
+      carbsG: targets.carbsG,
+      fatG: targets.fatG,
+      fiberG: targets.fiberG,
+      fiberMinG: targets.fiberMinG,
+      fiberMaxG: targets.fiberMaxG,
+      tdee: targets.tdee,
+      deficit: targets.deficit,
+      bodyFatPercent: targets.bodyFatPercent ?? profile?.bodyFatPercent ?? undefined,
+      weightKg: profile?.weightKg,
+    },
+  );
+
   return {
     goalTarget,
     body: {
@@ -352,6 +379,17 @@ async function buildTodayContext(userId: string) {
       },
       tdee: targets.tdee,
       deficit: targets.deficit,
+    },
+    recompCheck: {
+      status: recompCheck.status,
+      headline: recompCheck.headline,
+      timeline: recompCheck.timeline.summary,
+      recheckWeeks: recompCheck.timeline.recheckWeeks,
+      daysToHalfPoint: recompCheck.timeline.daysToHalfPoint,
+      actualDeficitKcal: recompCheck.timeline.actualDeficitKcal,
+      plannedDeficitKcal: recompCheck.timeline.plannedDeficitKcal,
+      why: recompCheck.why,
+      improvements: recompCheck.improvements,
     },
     today: {
       date: today,
@@ -668,11 +706,75 @@ const JSON_SHAPE = `Return ONLY valid JSON (no markdown):
 const WORKOUT_JSON_SHAPE = `Return ONLY valid JSON (no markdown):
 {"summary":"direct answer first","keepDoing":["..."],"improve":["..."],"watchOut":["..."],"plan":null}`;
 
+const DAILY_TIP_JSON = `Return ONLY valid JSON (no markdown):
+{"tip":"1-2 short sentences"}`;
+
+export type DailyTipAdvice = {
+  tip: string;
+  model: string;
+};
+
+function tipFromRecomp(recomp: {
+  improvements: Array<{ title: string; body: string }>;
+  why: Array<{ title: string; body: string }>;
+}): string {
+  const block = recomp.improvements[0] ?? recomp.why[0];
+  if (!block) {
+    return "Hit your protein floor and stay near your calorie target today.";
+  }
+  const first =
+    block.body.split(/(?<=[.!?])\s+/)[0]?.trim() || block.title;
+  return first.slice(0, 220);
+}
+
+export async function dailyTipWithAI(userId: string): Promise<DailyTipAdvice> {
+  const context = await buildTodayContext(userId);
+  const fallback = tipFromRecomp(context.recompCheck);
+
+  try {
+    const system = `You give ONE short daily tip for body recomposition.
+Use goalTarget, macroTargets, today's intake, and recompCheck (prefer improvements / why).
+Pick the single highest-leverage action for the rest of today — or tonight/tomorrow if the day looks finished.
+One tip only: 1–2 sentences, concrete and actionable. No lists, no medical claims.
+${DAILY_TIP_JSON}`;
+
+    const { content, model } = await aiChatJson({
+      system,
+      user: JSON.stringify({
+        scope: "daily_tip",
+        instruction: "One tip tied to their Target and recompCheck priorities.",
+        context,
+      }),
+      temperature: 0.6,
+    });
+
+    let tip = "";
+    try {
+      const parsed = parseJsonObjectLoose(content);
+      tip = String(parsed.tip ?? "").trim();
+    } catch {
+      tip = content.replace(/^["'\s]+|["'\s]+$/g, "").trim();
+    }
+    if (!tip) tip = fallback;
+    return { tip: tip.slice(0, 320), model };
+  } catch (err) {
+    console.warn(
+      "[daily-tip]",
+      err instanceof Error ? err.message : "AI tip failed — using local",
+    );
+    return { tip: fallback, model: "local" };
+  }
+}
+
 export async function coachWithAI(
   userId: string,
   scope: CoachScope,
   userRequest?: string,
 ): Promise<CoachAdvice> {
+  if (scope === "daily_tip") {
+    throw new Error('Use dailyTipWithAI for scope "daily_tip"');
+  }
+
   let itemsById: Map<string, PlanItemRef> | undefined;
 
   let context: unknown;
@@ -714,6 +816,7 @@ ${JSON_SHAPE}
 2-4 short bullets each in keepDoing / improve / watchOut.`
         : `You are a pragmatic body-recomposition coach.
 Blend nutrition adherence, workout consistency, weight trend, sleep (if present), and goalTarget.
+Use recompCheck as the primary diagnosis of today's macros vs targets (status, why, improvements, body-fat timeline) — fold those points into summary / improve / watchOut instead of reinventing them.
 EEE is insight-only, not added to the calorie target.
 Protein uses an evidence range (macroTargets.proteinRange): floor ≈1.61 g/kg, strong zone ≈1.85–2.2 g/kg. Judge under-eating vs the floor, not the ceiling; food logs may look "low" vs maxG while still being in range.
 Fiber (macroTargets.fiberRange) is a soft daily range by sex — nudge gently if well below minG; do not treat it as critical vs protein/calories.
@@ -730,7 +833,7 @@ ${JSON_SHAPE}
         ? "Answer userPriorityRequest directly. plan=null by default. If the ask implies a concrete revised/new exercise list, fill plan automatically; otherwise text/bullets only."
         : scope === "sleep"
           ? "Summarize sleep trends vs recomp recovery; give concrete keep doing / improve / watch outs."
-          : "Summarize today + recent trends; keep doing / improve.",
+          : "Summarize today + recent trends using recompCheck; keep doing / improve.",
     ...(userRequest
       ? {
           userPriorityRequest: userRequest.slice(0, 400),

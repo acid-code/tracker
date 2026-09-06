@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/shell/AppShell";
 import { AiCoachPanel } from "@/components/AiCoachPanel";
+import { DailyTip } from "@/components/DailyTip";
 import { MacroWarningsBanner } from "@/components/MacroWarningsBanner";
-import { NutritionCoach } from "@/components/NutritionCoach";
 import { TodayRemindersPanel } from "@/components/TodayRemindersPanel";
 import { apiFetch } from "@/lib/api-fetch";
 import { writeMacrosLocal } from "@/lib/macros-local-cache";
@@ -359,59 +359,34 @@ export function TodayDashboard() {
             </p>
           ) : null}
 
-          <AiCoachPanel
-            scope="today"
-            title="Today summary"
-            buttonLabel="Get AI summary"
-            placeholder='Optional: e.g. "focus on fat loss this week"'
-          />
+          <div className="space-y-4">
+            <DailyTip />
+            <AiCoachPanel
+              scope="today"
+              title="Today summary"
+              buttonLabel="Get AI summary"
+              placeholder='Optional: e.g. "focus on fat loss this week"'
+            />
+          </div>
 
           {hasLogged && macros ? (
-            <>
-              <MacroWarningsBanner
-                warnings={getMacroWarnings(macros.totals, {
-                  calorieTarget: profile.targets.calorieTarget,
-                  proteinG: profile.targets.proteinG,
-                  proteinMinG: profile.targets.proteinMinG,
-                  proteinGoodG: profile.targets.proteinGoodG,
-                  proteinMaxG: profile.targets.proteinMaxG,
-                  carbsG: profile.targets.carbsG,
-                  fatG: profile.targets.fatG,
-                  fiberG: profile.targets.fiberG,
-                  fiberMinG: profile.targets.fiberMinG,
-                  fiberMaxG: profile.targets.fiberMaxG,
-                })}
-              />
-              <NutritionCoach
-                intake={{
-                  ...macros.totals,
-                  fiberG: macros.totals.fiberG ?? 0,
-                }}
-                targets={{
-                  calorieTarget: profile.targets.calorieTarget,
-                  proteinG: profile.targets.proteinG,
-                  proteinMinG: profile.targets.proteinMinG,
-                  proteinGoodG: profile.targets.proteinGoodG,
-                  proteinMaxG: profile.targets.proteinMaxG,
-                  carbsG: profile.targets.carbsG,
-                  fatG: profile.targets.fatG,
-                  fiberG: profile.targets.fiberG,
-                  fiberMinG: profile.targets.fiberMinG,
-                  fiberMaxG: profile.targets.fiberMaxG,
-                  tdee: profile.targets.tdee,
-                  deficit: profile.targets.deficit,
-                  bodyFatPercent:
-                    profile.targets.bodyFatPercent ??
-                    profile.profile?.bodyFatPercent ??
-                    undefined,
-                  weightKg: profile.profile?.weightKg,
-                }}
-              />
-            </>
+            <MacroWarningsBanner
+              warnings={getMacroWarnings(macros.totals, {
+                calorieTarget: profile.targets.calorieTarget,
+                proteinG: profile.targets.proteinG,
+                proteinMinG: profile.targets.proteinMinG,
+                proteinGoodG: profile.targets.proteinGoodG,
+                proteinMaxG: profile.targets.proteinMaxG,
+                carbsG: profile.targets.carbsG,
+                fatG: profile.targets.fatG,
+                fiberG: profile.targets.fiberG,
+                fiberMinG: profile.targets.fiberMinG,
+                fiberMaxG: profile.targets.fiberMaxG,
+              })}
+            />
           ) : (
             <p className="text-sm text-[var(--muted)]">
-              Log food to get a recomp check vs your targets and a body-fat
-              recheck timeline.
+              Log food to track macros against your Target.
             </p>
           )}
 
