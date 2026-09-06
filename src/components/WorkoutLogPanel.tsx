@@ -304,8 +304,10 @@ export function WorkoutLogPanel({
 
   useEffect(() => {
     const drafts: Record<string, { reps: string; weightKg: string }> = {};
+    const validKeys = new Set<string>();
     for (const s of sessions) {
       for (const g of s.groups) {
+        validKeys.add(`${s.id}:${g.lift}`);
         for (const set of g.sets) {
           drafts[set.id] = {
             reps: String(set.reps),
@@ -316,6 +318,7 @@ export function WorkoutLogPanel({
     }
     if (running && running.date !== date) {
       for (const g of running.groups) {
+        validKeys.add(`${running.id}:${g.lift}`);
         for (const set of g.sets) {
           drafts[set.id] = {
             reps: String(set.reps),
@@ -324,8 +327,25 @@ export function WorkoutLogPanel({
         }
       }
     }
-    setEditDrafts(drafts);
-    setEditingLifts(new Set());
+    setEditDrafts((prev) => {
+      const next: Record<string, { reps: string; weightKg: string }> = {};
+      for (const [id, draft] of Object.entries(drafts)) {
+        const local = prev[id];
+        next[id] =
+          local &&
+          (local.reps !== draft.reps || local.weightKg !== draft.weightKg)
+            ? local
+            : draft;
+      }
+      return next;
+    });
+    setEditingLifts((prev) => {
+      const next = new Set<string>();
+      for (const key of prev) {
+        if (validKeys.has(key)) next.add(key);
+      }
+      return next;
+    });
   }, [sessions, running, date]);
 
   const selectedSession = useMemo(() => {
@@ -946,19 +966,36 @@ export function WorkoutLogPanel({
     });
   }
 
-  async function saveSet(id: string, cardio = false) {
-    const d = editDrafts[id];
-    if (!d) return;
-    setSavingId(id);
+  async function saveExercise(
+    sessionId: string,
+    lift: string,
+    sets: Array<{ id: string; reps: number; weightKg: number }>,
+  ) {
+    const key = `${sessionId}:${lift}`;
+    const updates = sets.flatMap((set) => {
+      const d = editDrafts[set.id];
+      if (!d) return [];
+      const reps = Number(d.reps);
+      const weightKg = Number(d.weightKg);
+      if (reps === set.reps && weightKg === set.weightKg) return [];
+      return [{ id: set.id, reps, weightKg }];
+    });
+    if (updates.length === 0) return;
+    setSavingId(key);
     try {
-      await fetch("/api/lifts", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id,
-          reps: Number(d.reps),
-          weightKg: cardio ? 0 : Number(d.weightKg),
-        }),
+      await Promise.all(
+        updates.map((u) =>
+          fetch("/api/lifts", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(u),
+          }),
+        ),
+      );
+      setEditingLifts((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
       });
       await onChanged();
     } finally {
@@ -1228,74 +1265,61 @@ export function WorkoutLogPanel({
                   </div>
                 </li>
               ) : (
-                g.sets.map((set) => {
-                  const d = editDrafts[set.id] ?? {
-                    reps: String(set.reps),
-                    weightKg: String(set.weightKg),
-                  };
-                  const dirty =
-                    Number(d.reps) !== set.reps ||
-                    Number(d.weightKg) !== set.weightKg;
-                  return (
-                    <li
-                      key={set.id}
-                      className="py-3 flex flex-col gap-2 sm:flex-row sm:items-end"
-                    >
-                      <span className="text-xs text-[var(--muted)] w-14">
-                        Set {set.setNumber}
-                      </span>
-                      <label className="space-y-1 block flex-1">
-                        <span className="text-[10px] text-[var(--muted)]">
-                          {g.bodyweight ? "Added kg" : "kg"}
+                <>
+                  {g.sets.map((set) => {
+                    const d = editDrafts[set.id] ?? {
+                      reps: String(set.reps),
+                      weightKg: String(set.weightKg),
+                    };
+                    return (
+                      <li
+                        key={set.id}
+                        className="py-3 flex flex-col gap-2 sm:flex-row sm:items-end"
+                      >
+                        <span className="text-xs text-[var(--muted)] w-14">
+                          Set {set.setNumber}
                         </span>
-                        <input
-                          className={field}
-                          type="number"
-                          step="0.5"
-                          min={0}
-                          value={d.weightKg}
-                          onChange={(e) =>
-                            setEditDrafts((prev) => ({
-                              ...prev,
-                              [set.id]: {
-                                ...d,
-                                weightKg: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                      </label>
-                      <label className="space-y-1 block flex-1">
-                        <span className="text-[10px] text-[var(--muted)]">
-                          Reps
-                        </span>
-                        <input
-                          className={field}
-                          type="number"
-                          min={1}
-                          value={d.reps}
-                          onChange={(e) =>
-                            setEditDrafts((prev) => ({
-                              ...prev,
-                              [set.id]: {
-                                ...d,
-                                reps: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                      </label>
-                      <div className="flex gap-2">
-                        {dirty ? (
-                          <button
-                            type="button"
-                            disabled={savingId === set.id}
-                            onClick={() => void saveSet(set.id, false)}
-                            className="text-xs text-[var(--accent)] font-medium min-h-[44px] px-3"
-                          >
-                            {savingId === set.id ? "…" : "Save"}
-                          </button>
-                        ) : null}
+                        <label className="space-y-1 block flex-1">
+                          <span className="text-[10px] text-[var(--muted)]">
+                            {g.bodyweight ? "Added kg" : "kg"}
+                          </span>
+                          <input
+                            className={field}
+                            type="number"
+                            step="0.5"
+                            min={0}
+                            value={d.weightKg}
+                            onChange={(e) =>
+                              setEditDrafts((prev) => ({
+                                ...prev,
+                                [set.id]: {
+                                  ...d,
+                                  weightKg: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="space-y-1 block flex-1">
+                          <span className="text-[10px] text-[var(--muted)]">
+                            Reps
+                          </span>
+                          <input
+                            className={field}
+                            type="number"
+                            min={1}
+                            value={d.reps}
+                            onChange={(e) =>
+                              setEditDrafts((prev) => ({
+                                ...prev,
+                                [set.id]: {
+                                  ...d,
+                                  reps: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </label>
                         <button
                           type="button"
                           onClick={() => void removeSet(set.id)}
@@ -1303,10 +1327,34 @@ export function WorkoutLogPanel({
                         >
                           Remove set
                         </button>
-                      </div>
-                    </li>
-                  );
-                })
+                      </li>
+                    );
+                  })}
+                  {(() => {
+                    const dirty = g.sets.some((set) => {
+                      const d = editDrafts[set.id];
+                      if (!d) return false;
+                      return (
+                        Number(d.reps) !== set.reps ||
+                        Number(d.weightKg) !== set.weightKg
+                      );
+                    });
+                    return (
+                      <li className="py-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={!dirty || savingId === key}
+                          onClick={() =>
+                            void saveExercise(s.id, g.lift, g.sets)
+                          }
+                          className="rounded-md bg-[var(--accent)] text-[var(--background)] px-3 py-2.5 text-xs font-medium min-h-[44px] disabled:opacity-50"
+                        >
+                          {savingId === key ? "Saving…" : "Save exercise"}
+                        </button>
+                      </li>
+                    );
+                  })()}
+                </>
               )}
             </ul>
           ) : null}
