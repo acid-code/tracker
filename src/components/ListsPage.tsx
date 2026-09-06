@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ReminderEnableBanner } from "@/components/ReminderEnableBanner";
+import { DayDateBar } from "@/components/DayDateBar";
 import { AppShell } from "@/components/shell/AppShell";
 import { apiFetch } from "@/lib/api-fetch";
 import type {
@@ -256,33 +257,18 @@ export function ListsPage() {
   return (
     <AppShell title="Lists">
       <div className="space-y-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-[var(--muted)] shrink-0">Date</span>
-            <input
-              type="date"
-              className={`${field} max-w-[11rem]`}
-              value={date}
-              max={today}
-              onChange={(e) => changeDate(e.target.value)}
-            />
-          </label>
-          {date !== today ? (
-            <button
-              type="button"
-              onClick={() => changeDate(today)}
-              className="text-xs text-[var(--accent)] hover:underline min-h-[44px]"
-            >
-              Today
-            </button>
-          ) : null}
+        <DayDateBar
+          date={date}
+          onChange={changeDate}
+          inputClassName={`${field} max-w-[11rem]`}
+        >
           {progress.total > 0 ? (
             <p className="text-xs text-[var(--muted)] ml-auto">
               {progress.done}/{progress.total} checked
               {date !== today ? " · past day" : ""}
             </p>
           ) : null}
-        </div>
+        </DayDateBar>
 
         <nav
           className="flex gap-0.5 border-b border-[var(--border)]"

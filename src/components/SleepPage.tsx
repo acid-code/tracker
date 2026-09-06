@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/shell/AppShell";
 import { AiCoachPanel } from "@/components/AiCoachPanel";
+import { DayDateBar } from "@/components/DayDateBar";
 import { apiFetch } from "@/lib/api-fetch";
 import { invalidateAfterSleep } from "@/lib/query-invalidate";
 import { queryKeys } from "@/lib/query-keys";
@@ -262,25 +263,13 @@ export function SleepPage() {
           onSubmit={(e) => void save(e)}
           className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 space-y-3"
         >
-          <label className="space-y-1 block">
-            <span className="text-xs text-[var(--muted)]">Morning of (until)</span>
-            <input
-              type="date"
-              max={today}
-              value={date}
-              onChange={(e) => setDate(clampDate(e.target.value))}
-              className={field}
-            />
-          </label>
-          {date !== today ? (
-            <button
-              type="button"
-              onClick={() => setDate(today)}
-              className="text-xs text-[var(--accent)] hover:underline min-h-[44px]"
-            >
-              Jump to today
-            </button>
-          ) : null}
+          <DayDateBar
+            date={date}
+            onChange={(next) => setDate(clampDate(next))}
+            inputClassName={field}
+            label="Morning of (until)"
+            todayLabel="Jump to today"
+          />
           <div className="grid grid-cols-2 gap-3">
             <label className="space-y-1 block">
               <span className="text-xs text-[var(--muted)]">From</span>

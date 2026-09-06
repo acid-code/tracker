@@ -7,6 +7,7 @@ import { MacrosGuesserPanel } from "@/components/MacrosGuesserPanel";
 import { MacrosLogPanel } from "@/components/MacrosLogPanel";
 import { MenuDailyPanel } from "@/components/MenuPanels";
 import { NutritionIdeasAi } from "@/components/NutritionIdeasAi";
+import { DayDateBar } from "@/components/DayDateBar";
 import {
   NutritionPanelNav,
   nutritionFieldClass,
@@ -68,27 +69,12 @@ function NutritionContent() {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-3 mb-5">
-        <label className="flex items-center gap-2 text-sm w-full sm:w-auto">
-          <span className="text-[var(--muted)] shrink-0">Date</span>
-          <input
-            type="date"
-            className={`${field} max-w-[11rem]`}
-            value={date}
-            max={today}
-            onChange={(e) => changeDate(e.target.value)}
-          />
-        </label>
-        {date !== today ? (
-          <button
-            type="button"
-            onClick={() => changeDate(today)}
-            className="text-xs text-[var(--accent)] hover:underline min-h-[44px]"
-          >
-            Today
-          </button>
-        ) : null}
-      </div>
+      <DayDateBar
+        date={date}
+        onChange={changeDate}
+        inputClassName={`${field} max-w-[11rem]`}
+        className="mb-5"
+      />
 
       <NutritionPanelNav active={panel} onChange={changePanel} />
 

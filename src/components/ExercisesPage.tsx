@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/shell/AppShell";
 import { BodyHeatmap } from "@/components/BodyHeatmap";
+import { DayDateBar } from "@/components/DayDateBar";
 import { MuscleMap } from "@/components/MuscleMap";
 import { SleepUndersleepTip } from "@/components/SleepUndersleepTip";
 import {
@@ -238,30 +239,12 @@ export function ExercisesPage() {
   }
 
   const dateBar = (
-    <div className="flex flex-wrap items-center gap-3 mb-4">
-      <label className="flex items-center gap-2 text-sm">
-        <span className="text-[var(--muted)]">Date</span>
-        <input
-          className={field}
-          type="date"
-          max={today}
-          value={date}
-          onChange={(e) => setDateSafe(e.target.value)}
-        />
-      </label>
-      <span className="text-sm text-[var(--muted)]">
-        {todayFriendly(date)}
-      </span>
-      {date !== today ? (
-        <button
-          type="button"
-          onClick={() => setDateSafe(today)}
-          className="text-xs text-[var(--accent)] hover:underline"
-        >
-          Today
-        </button>
-      ) : null}
-    </div>
+    <DayDateBar
+      date={date}
+      onChange={setDateSafe}
+      inputClassName={field}
+      className="mb-4"
+    />
   );
 
   const overviewPanel = (
