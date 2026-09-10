@@ -104,8 +104,9 @@ export function MacrosLogPanel({ date }: Props) {
   const macrosQuery = useMacrosQuery(date);
 
   const profileQuery = useQuery({
-    queryKey: queryKeys.profile,
-    queryFn: () => apiFetch<ProfilePayload>("/api/profile"),
+    queryKey: [...queryKeys.profile, date],
+    queryFn: () =>
+      apiFetch<ProfilePayload>(`/api/profile?date=${encodeURIComponent(date)}`),
   });
 
   const foods = macrosQuery.data?.foods ?? [];

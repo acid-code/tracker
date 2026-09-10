@@ -19,6 +19,8 @@ export type CoachTargets = {
   deficit: number;
   bodyFatPercent?: number;
   weightKg?: number | null;
+  /** cut | recomp | maintain | bulk */
+  goalMode?: string | null;
 };
 
 export type CoachBlock = {
@@ -66,10 +68,15 @@ function buildTimeline(
   let summary: string;
 
   if (actualDeficitKcal <= 50) {
+    const mode = targets.goalMode;
     summary =
       actualDeficitKcal < -100
-        ? "At this surplus, fat loss will stall or reverse. Expect little useful change on the scale or calipers until calories settle near your recomp target."
-        : "You're roughly at maintenance today. Body-fat % won't move much until you sustain a modest deficit over several weeks.";
+        ? mode === "bulk"
+          ? "You're in a surplus — expected for a bulk. Watch weekly weight and keep protein high."
+          : "At this surplus, fat loss will stall or reverse. Expect little useful change on the scale or calipers until calories settle near your target."
+        : mode === "maintain"
+          ? "You're roughly at maintenance — body composition changes slowly; focus on training consistency."
+          : "You're roughly at maintenance today. Body-fat % won't move much until you sustain a modest deficit over several weeks.";
   } else if (weightKg && bf != null && bf > 0) {
     // 0.5 percentage points of body weight as fat ≈ measurable change
     const kgForHalfPoint = weightKg * 0.005;
@@ -141,18 +148,25 @@ export function buildNutritionCoach(
       });
     }
   } else if (actualDeficit < planned - 150 && intake.calories > targets.calorieTarget + 100) {
+    const bulk = targets.goalMode === "bulk";
     why.push({
-      title: "Calories ran high for recomp",
-      body: `Logged ${Math.round(intake.calories)} kcal vs a ${targets.calorieTarget} target (TDEE ${targets.tdee}). Today's effective deficit was only ${actualDeficit} kcal against a planned ${planned}. Fat loss slows when the gap stays this small.`,
+      title: bulk ? "Calories ran above the planned surplus" : "Calories ran high for the plan",
+      body: `Logged ${Math.round(intake.calories)} kcal vs a ${targets.calorieTarget} target (TDEE ${targets.tdee}). Today's effective deficit was only ${actualDeficit} kcal against a planned ${planned}.`,
     });
     improvements.push({
       title: "Trim dense extras",
       body: `Aim closer to ${targets.calorieTarget} kcal tomorrow. Small cuts in oils, sauces, and snacks usually reclaim that budget without dropping protein.`,
     });
   } else if (!incomplete) {
+    const mode = targets.goalMode;
     why.push({
-      title: "Calories are in a solid recomp range",
-      body: `Logged ${Math.round(intake.calories)} kcal vs ${targets.calorieTarget} target. Effective deficit ~${actualDeficit} kcal (planned ${planned}) — a sustainable pace for losing fat while lifting.`,
+      title:
+        mode === "bulk"
+          ? "Calories support a controlled surplus"
+          : mode === "maintain"
+            ? "Calories are near maintenance"
+            : "Calories are in a solid range for your plan",
+      body: `Logged ${Math.round(intake.calories)} kcal vs ${targets.calorieTarget} target. Effective energy gap ~${actualDeficit} kcal (planned ${planned}).`,
     });
   }
 

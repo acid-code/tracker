@@ -95,6 +95,11 @@ export function clampDeficit(deficit: number) {
   return Math.min(500, Math.max(300, Math.round(deficit)));
 }
 
+/** Energy delta vs TDEE: cut/recomp positive, maintain 0, bulk negative (surplus). */
+export function clampEnergyDelta(deficit: number) {
+  return Math.min(800, Math.max(-600, Math.round(deficit)));
+}
+
 export function calcTargets(input: {
   weightKg: number;
   bodyFatPercent: number;
@@ -102,11 +107,16 @@ export function calcTargets(input: {
   deficitKcal?: number;
   proteinPerKg?: number;
   sex?: Sex | null;
+  /** When true, allow maintain (0) and surplus (negative) instead of 300–500 band. */
+  allowAnyDeficit?: boolean;
 }) {
   const lbm = leanBodyMassKg(input.weightKg, input.bodyFatPercent);
   const bmr = bmrKatchMcArdle(lbm);
   const tdee = calcTdeeFromBmr(bmr, input.activityLevel);
-  const deficit = clampDeficit(input.deficitKcal ?? DEFAULT_DEFICIT_KCAL);
+  const raw = input.deficitKcal ?? DEFAULT_DEFICIT_KCAL;
+  const deficit = input.allowAnyDeficit
+    ? clampEnergyDelta(raw)
+    : clampDeficit(raw);
   const calorieTarget = Math.max(1200, tdee - deficit);
 
   const range = proteinRangeFromWeight(input.weightKg);
@@ -159,7 +169,39 @@ export type ProfileForTargets = {
   proteinPerKg: number | null;
   calorieTargetOverride: number | null;
   proteinTargetOverride: number | null;
+  fatTargetOverride?: number | null;
+  suggestedCalorieTarget?: number | null;
+  suggestedProteinG?: number | null;
+  suggestedFatG?: number | null;
+  suggestedDeficitKcal?: number | null;
+  suggestedGoalMode?: string | null;
 };
+
+export type TargetPlanRow = {
+  effectiveFrom: string;
+  calorieTarget: number;
+  proteinG: number;
+  fatG: number;
+  carbsG: number;
+  tdee: number;
+  deficitKcal: number;
+  goalMode?: string | null;
+};
+
+/** Latest plan with effectiveFrom <= date. */
+export function planForDate(
+  plans: TargetPlanRow[] | null | undefined,
+  date: string,
+): TargetPlanRow | null {
+  if (!plans?.length) return null;
+  let best: TargetPlanRow | null = null;
+  for (const p of plans) {
+    if (p.effectiveFrom <= date) {
+      if (!best || p.effectiveFrom > best.effectiveFrom) best = p;
+    }
+  }
+  return best;
+}
 
 export function resolveTargets(profile: ProfileForTargets) {
   if (!profile.weightKg || profile.bodyFatPercent == null) {
@@ -173,6 +215,9 @@ export function resolveTargets(profile: ProfileForTargets) {
     return null;
   }
 
+  const allowAny =
+    profile.deficitKcal != null &&
+    (profile.deficitKcal < 300 || profile.deficitKcal > 500);
   const computed = calcTargets({
     weightKg: profile.weightKg,
     bodyFatPercent: profile.bodyFatPercent,
@@ -181,21 +226,35 @@ export function resolveTargets(profile: ProfileForTargets) {
     /** Always plan inside the evidence range; ignore legacy 2.2 stores. */
     proteinPerKg: DEFAULT_PROTEIN_PER_KG,
     sex: profile.sex,
+    allowAnyDeficit: allowAny || profile.suggestedGoalMode != null,
   });
   const range = proteinRangeFromWeight(profile.weightKg);
   const fiber = fiberTargetsFromSex(profile.sex);
 
   const calorieTarget =
-    profile.calorieTargetOverride ?? computed.calorieTarget;
-  const proteinG = profile.proteinTargetOverride ?? computed.proteinG;
+    profile.calorieTargetOverride ??
+    profile.suggestedCalorieTarget ??
+    computed.calorieTarget;
+  const proteinG =
+    profile.proteinTargetOverride ??
+    profile.suggestedProteinG ??
+    computed.proteinG;
   const proteinKcal = proteinG * 4;
-  const fatKcal = calorieTarget * FAT_CALORIE_FRACTION;
-  const fatG = Math.round(fatKcal / 9);
+  const fatG =
+    profile.fatTargetOverride ??
+    profile.suggestedFatG ??
+    Math.round((calorieTarget * FAT_CALORIE_FRACTION) / 9);
   const carbKcal = Math.max(0, calorieTarget - proteinKcal - fatG * 9);
   const carbsG = Math.round(carbKcal / 4);
+  const deficit =
+    profile.suggestedDeficitKcal != null &&
+    profile.calorieTargetOverride == null
+      ? profile.suggestedDeficitKcal
+      : computed.tdee - calorieTarget;
 
   return {
     ...computed,
+    deficit,
     calorieTarget,
     proteinG,
     carbsG,
@@ -206,10 +265,71 @@ export function resolveTargets(profile: ProfileForTargets) {
     proteinMaxG: range.maxG,
     computedCalorieTarget: computed.calorieTarget,
     computedProteinG: computed.proteinG,
+    computedFatG: Math.round(
+      (computed.calorieTarget * FAT_CALORIE_FRACTION) / 9,
+    ),
     hasOverrides:
       profile.calorieTargetOverride != null ||
-      profile.proteinTargetOverride != null,
+      profile.proteinTargetOverride != null ||
+      profile.fatTargetOverride != null,
+    goalMode: profile.suggestedGoalMode ?? null,
   };
+}
+
+/** Prefer frozen plan macros/tdee for date D; else live resolveTargets. */
+export function resolveTargetsForDate(
+  profile: ProfileForTargets,
+  plans: TargetPlanRow[] | null | undefined,
+  date: string,
+) {
+  const plan = planForDate(plans, date);
+  if (plan) {
+    const fiber = fiberTargetsFromSex(profile.sex);
+    const range = profile.weightKg
+      ? proteinRangeFromWeight(profile.weightKg)
+      : { minG: plan.proteinG, goodG: plan.proteinG, maxG: plan.proteinG };
+    /** LBM/BMR are body composition, not frozen on the plan — keep showing live stats. */
+    let lbmKg = 0;
+    let bmr = 0;
+    let bodyFatPercent = profile.bodyFatPercent ?? 0;
+    if (
+      profile.weightKg &&
+      profile.bodyFatPercent != null &&
+      Number.isFinite(profile.bodyFatPercent) &&
+      profile.bodyFatPercent > 0 &&
+      profile.bodyFatPercent < 70
+    ) {
+      const lbm = leanBodyMassKg(profile.weightKg, profile.bodyFatPercent);
+      lbmKg = Math.round(lbm * 10) / 10;
+      bmr = Math.round(bmrKatchMcArdle(lbm));
+      bodyFatPercent = profile.bodyFatPercent;
+    }
+    return {
+      leanBodyMassKg: lbmKg,
+      bodyFatPercent,
+      bmr,
+      tdee: plan.tdee,
+      deficit: plan.deficitKcal,
+      calorieTarget: plan.calorieTarget,
+      proteinG: plan.proteinG,
+      carbsG: plan.carbsG,
+      fatG: plan.fatG,
+      ...fiber,
+      proteinMinG: range.minG,
+      proteinGoodG: range.goodG,
+      proteinMaxG: range.maxG,
+      proteinPerKg: DEFAULT_PROTEIN_PER_KG,
+      computedCalorieTarget: plan.calorieTarget,
+      computedProteinG: plan.proteinG,
+      computedFatG: plan.fatG,
+      hasOverrides: true,
+      goalMode: plan.goalMode ?? null,
+      fromPlan: true as const,
+      planEffectiveFrom: plan.effectiveFrom,
+    };
+  }
+  const live = resolveTargets(profile);
+  return live ? { ...live, fromPlan: false as const } : null;
 }
 
 /**

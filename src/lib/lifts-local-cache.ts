@@ -6,7 +6,7 @@ import {
 import { todayISODate } from "@/lib/tdee";
 
 /** Keep two weeks of exercise/lifts payloads warm for instant UI. */
-export const LIFTS_CACHE_WINDOW_DAYS = 14;
+export const LIFTS_CACHE_WINDOW_DAYS = 60;
 const STORAGE_BASE = "lifts-local-v1";
 
 /** Full `/api/lifts?date=` response — stored as-is for hydrate. */

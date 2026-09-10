@@ -9,15 +9,13 @@ import {
   toggleStandingCheck,
   updateStandingItemSlot,
 } from "@/lib/standing-menu";
+import { resolveTargetsForDate, todayISODate } from "@/lib/tdee";
 import {
-  resolveTargets,
-  todayISODate,
-  type ActivityLevel,
-  DEFAULT_DEFICIT_KCAL,
-  DEFAULT_PROTEIN_PER_KG,
-} from "@/lib/tdee";
+  listTargetPlans,
+  profileToForTargets,
+} from "@/lib/target-plans";
 
-async function getTargets(userId: string) {
+async function getTargets(userId: string, date: string) {
   const db = await getDb();
   const profile = await db.query.profiles.findFirst({
     where: eq(schema.profiles.userId, userId),
@@ -25,18 +23,8 @@ async function getTargets(userId: string) {
   if (!profile?.weightKg || profile.bodyFatPercent == null) {
     return null;
   }
-  return resolveTargets({
-    weightKg: profile.weightKg,
-    heightCm: profile.heightCm,
-    age: profile.age,
-    sex: (profile.sex as "male" | "female" | null) ?? null,
-    bodyFatPercent: profile.bodyFatPercent,
-    activityLevel: (profile.activityLevel ?? "moderate") as ActivityLevel,
-    deficitKcal: profile.deficitKcal ?? DEFAULT_DEFICIT_KCAL,
-    proteinPerKg: profile.proteinPerKg ?? DEFAULT_PROTEIN_PER_KG,
-    calorieTargetOverride: profile.calorieTargetOverride ?? null,
-    proteinTargetOverride: profile.proteinTargetOverride ?? null,
-  });
+  const plans = await listTargetPlans(userId);
+  return resolveTargetsForDate(profileToForTargets(profile), plans, date);
 }
 
 export async function GET(req: Request) {
@@ -48,7 +36,12 @@ export async function GET(req: Request) {
 
   const items = await getMenuForDate(authz.userId, date);
   const totals = sumMacros(items);
-  const targets = await getTargets(authz.userId);
+  const targets = await getTargets(authz.userId, date);
+
+  const menuCalories = totals.calories;
+  const drift =
+    targets != null &&
+    Math.abs(menuCalories - targets.calorieTarget) > 250;
 
   return jsonOk({
     date,
@@ -56,6 +49,7 @@ export async function GET(req: Request) {
     totals,
     targets,
     persistent: true,
+    targetsDrift: drift,
   });
 }
 

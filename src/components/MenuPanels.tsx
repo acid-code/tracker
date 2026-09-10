@@ -39,6 +39,7 @@ type DailyPayload = {
     fiberG?: number;
     calorieTarget: number;
   } | null;
+  targetsDrift?: boolean;
 };
 
 const MEAL_SLOT_SECTIONS = [
@@ -282,6 +283,13 @@ export function MenuDailyPanel({ date }: { date: string }) {
         checklist resets overnight. Check an item to log it for the selected
         date.
       </p>
+
+      {dailyQuery.data?.targetsDrift ? (
+        <p className="text-sm text-amber-700 dark:text-amber-400">
+          Menu calories drifted from your current targets — improve or rebuild
+          the menu.
+        </p>
+      ) : null}
 
       {targets ? (
         <div className="rounded-lg border border-[var(--border)] p-4 space-y-3">

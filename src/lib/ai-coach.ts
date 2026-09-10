@@ -5,12 +5,13 @@ import { EXERCISES, getExercise } from "@/lib/exercises";
 import { sumMacros } from "@/lib/macros";
 import { buildNutritionCoach } from "@/lib/nutrition-coach";
 import {
-  DEFAULT_DEFICIT_KCAL,
-  DEFAULT_PROTEIN_PER_KG,
-  resolveTargets,
+  resolveTargetsForDate,
   todayISODate,
-  type ActivityLevel,
 } from "@/lib/tdee";
+import {
+  listTargetPlans,
+  profileToForTargets,
+} from "@/lib/target-plans";
 import { listWorkoutPlans } from "@/lib/workout-plans";
 
 export type CoachScope = "today" | "workout" | "sleep" | "daily_tip";
@@ -197,33 +198,32 @@ async function loadProfileContext(userId: string) {
   const profile = await db.query.profiles.findFirst({
     where: eq(schema.profiles.userId, userId),
   });
+  const plans =
+    profile?.weightKg && profile.bodyFatPercent != null
+      ? await listTargetPlans(userId)
+      : [];
   const targets =
     profile?.weightKg && profile.bodyFatPercent != null
-      ? resolveTargets({
-          weightKg: profile.weightKg,
-          heightCm: profile.heightCm,
-          age: profile.age,
-          sex: (profile.sex as "male" | "female" | null) ?? null,
-          bodyFatPercent: profile.bodyFatPercent,
-          activityLevel: (profile.activityLevel ??
-            "moderate") as ActivityLevel,
-          deficitKcal: profile.deficitKcal ?? DEFAULT_DEFICIT_KCAL,
-          proteinPerKg: profile.proteinPerKg ?? DEFAULT_PROTEIN_PER_KG,
-          calorieTargetOverride: profile.calorieTargetOverride ?? null,
-          proteinTargetOverride: profile.proteinTargetOverride ?? null,
-        })
+      ? resolveTargetsForDate(
+          profileToForTargets(profile),
+          plans,
+          todayISODate(),
+        )
       : null;
 
   return {
     db,
     profile,
     targets,
+    plans,
     goalTarget: profile?.goalTarget?.trim() || null,
+    goalMode: profile?.suggestedGoalMode ?? targets?.goalMode ?? null,
   };
 }
 
 async function buildTodayContext(userId: string) {
-  const { db, profile, targets, goalTarget } = await loadProfileContext(userId);
+  const { db, profile, targets, goalTarget, goalMode } =
+    await loadProfileContext(userId);
   if (!targets) {
     throw new Error("Complete profile targets before requesting coaching.");
   }
@@ -349,11 +349,13 @@ async function buildTodayContext(userId: string) {
       deficit: targets.deficit,
       bodyFatPercent: targets.bodyFatPercent ?? profile?.bodyFatPercent ?? undefined,
       weightKg: profile?.weightKg,
+      goalMode: goalMode ?? targets.goalMode,
     },
   );
 
   return {
     goalTarget,
+    goalMode,
     body: {
       weightKg: profile?.weightKg ?? null,
       bodyFatPercent: profile?.bodyFatPercent ?? null,

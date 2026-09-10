@@ -28,6 +28,8 @@ type ProfilePayload = {
     weightKg: number | null;
     bodyFatPercent?: number | null;
     goalTarget?: string | null;
+    suggestedGoalMode?: string | null;
+    suggestedRationale?: string | null;
   } | null;
   targets: {
     calorieTarget: number;
@@ -43,7 +45,9 @@ type ProfilePayload = {
     tdee: number;
     deficit: number;
     bodyFatPercent?: number;
+    goalMode?: string | null;
   } | null;
+  suggestionStale?: boolean;
 };
 
 type MacrosPayload = {
@@ -191,6 +195,12 @@ export function TodayDashboard() {
                 Your target
               </p>
               <p className="text-sm leading-relaxed">{goalTarget}</p>
+              {profile?.profile?.suggestedGoalMode ? (
+                <p className="text-xs text-[var(--muted)]">
+                  Suggested mode: {profile.profile.suggestedGoalMode}
+                  {profile.suggestionStale ? " (stats changed — refresh on Profile)" : ""}
+                </p>
+              ) : null}
             </section>
           ) : (
             <p className="text-sm text-[var(--muted)]">

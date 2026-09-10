@@ -1,5 +1,6 @@
 import { auth, signOut } from "@/auth";
 import { AppShell } from "@/components/shell/AppShell";
+import { PrivacyBackupPanel } from "@/components/PrivacyBackupPanel";
 import { SettingsNutrition } from "@/components/SettingsNutrition";
 import { SettingsNutritionDisplay } from "@/components/SettingsNutritionDisplay";
 import { redirect } from "next/navigation";
@@ -27,6 +28,8 @@ export default async function SettingsPage() {
 
         <SettingsNutritionDisplay />
 
+        <PrivacyBackupPanel />
+
         <form
           action={async () => {
             "use server";
@@ -42,10 +45,10 @@ export default async function SettingsPage() {
         </form>
 
         <p className="text-xs text-[var(--muted)] leading-relaxed">
-          Install from your browser menu for a home-screen app. On Android Chrome,
-          long-press the app icon for Log food / Log exercise / Log weight
-          shortcuts. Logs sync across devices via your Google account (other
-          devices refresh within about a minute).
+          Install from your browser menu for a home-screen app. Last 60 days of
+          health data stay on this device; encrypted backup is tied to your
+          Google account. Legacy server plaintext remains until you ask to
+          retire it.
         </p>
       </div>
     </AppShell>

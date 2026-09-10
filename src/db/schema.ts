@@ -82,9 +82,76 @@ export const profiles = sqliteTable("profiles", {
   countryCode: text("countryCode").default("il"),
   calorieTargetOverride: integer("calorieTargetOverride"),
   proteinTargetOverride: integer("proteinTargetOverride"),
+  fatTargetOverride: integer("fatTargetOverride"),
   /** Free-text goal used by AI coaching (e.g. lose fat, recomp, gain muscle). */
   goalTarget: text("goalTarget"),
+  suggestedGoalMode: text("suggestedGoalMode"),
+  suggestedCalorieTarget: integer("suggestedCalorieTarget"),
+  suggestedProteinG: integer("suggestedProteinG"),
+  suggestedFatG: integer("suggestedFatG"),
+  suggestedDeficitKcal: integer("suggestedDeficitKcal"),
+  suggestedRationale: text("suggestedRationale"),
+  suggestedAt: integer("suggestedAt", { mode: "timestamp_ms" }),
+  suggestedBasedOnWeightKg: real("suggestedBasedOnWeightKg"),
+  suggestedBasedOnBf: real("suggestedBasedOnBf"),
+  suggestedBasedOnActivity: text("suggestedBasedOnActivity"),
+  /** pending | dual_write | verified | plaintext_retired */
+  migrationStatus: text("migrationStatus").default("pending"),
   updatedAt: integer("updatedAt", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
+
+/** Frozen nutrition plans — effectiveFrom calendar day forward until next plan. */
+export const targetPlans = sqliteTable("target_plans", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: text("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  effectiveFrom: text("effectiveFrom").notNull(),
+  calorieTarget: integer("calorieTarget").notNull(),
+  proteinG: integer("proteinG").notNull(),
+  fatG: integer("fatG").notNull(),
+  carbsG: integer("carbsG").notNull(),
+  tdee: integer("tdee").notNull(),
+  deficitKcal: integer("deficitKcal").notNull(),
+  goalMode: text("goalMode"),
+  source: text("source").notNull().default("override"),
+  createdAt: integer("createdAt", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
+
+/** Device-keyed encrypted health backups (client holds DEK). */
+export const encryptedBlobs = sqliteTable("encrypted_blobs", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: text("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  deviceId: text("deviceId"),
+  domain: text("domain").notNull(),
+  date: text("date").notNull(),
+  iv: text("iv").notNull(),
+  ciphertext: text("ciphertext").notNull(),
+  updatedAt: integer("updatedAt", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
+
+export const userDevices = sqliteTable("user_devices", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: text("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  deviceId: text("deviceId").notNull(),
+  label: text("label"),
+  lastSeenAt: integer("lastSeenAt", { mode: "timestamp_ms" })
     .notNull()
     .default(sql`(unixepoch() * 1000)`),
 });

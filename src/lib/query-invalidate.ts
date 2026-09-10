@@ -55,5 +55,20 @@ export async function invalidateAfterProfile(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: ["macros"] }),
     queryClient.invalidateQueries({ queryKey: ["menu"] }),
     queryClient.invalidateQueries({ queryKey: ["history"] }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.dailyTip }),
   ]);
+  if (typeof window !== "undefined") {
+    try {
+      const keys: string[] = [];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (k?.includes("ai-summary") || k?.includes("recomp.ai-summary")) {
+          keys.push(k);
+        }
+      }
+      for (const k of keys) window.localStorage.removeItem(k);
+    } catch {
+      /* ignore */
+    }
+  }
 }

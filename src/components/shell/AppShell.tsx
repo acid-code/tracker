@@ -1,7 +1,8 @@
-import Link from "next/link";
+import { LocalPrivacyBootstrap } from "@/components/LocalPrivacyBootstrap";
 import { ReminderLocalTicker } from "@/components/ReminderLocalTicker";
 import { DesktopNav } from "./DesktopNav";
 import { MobileNav } from "./MobileNav";
+import Link from "next/link";
 
 export function AppShell({
   children,
@@ -12,6 +13,7 @@ export function AppShell({
 }) {
   return (
     <div className="min-h-dvh flex bg-[var(--background)] text-[var(--foreground)] overflow-x-hidden">
+      <LocalPrivacyBootstrap />
       <ReminderLocalTicker />
       <DesktopNav />
       <div className="flex-1 flex flex-col min-w-0 max-w-full">

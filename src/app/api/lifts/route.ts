@@ -23,6 +23,7 @@ import {
   looksLikeCardioSession,
   todayISODate,
 } from "@/lib/tdee";
+import { weightAsOf } from "@/lib/weight-as-of";
 
 function sessionIsCardio(
   name: string | null | undefined,
@@ -84,19 +85,7 @@ async function resolveBodyWeight(
   userId: string,
   date: string,
 ) {
-  const weightLog = await db.query.weightLogs.findFirst({
-    where: and(
-      eq(schema.weightLogs.userId, userId),
-      eq(schema.weightLogs.date, date),
-    ),
-  });
-  const profile = await db.query.profiles.findFirst({
-    where: eq(schema.profiles.userId, userId),
-  });
-  return {
-    bodyWeightKg: weightLog?.weightKg ?? profile?.weightKg ?? null,
-    profileWeightKg: profile?.weightKg ?? null,
-  };
+  return weightAsOf(db, userId, date);
 }
 
 function parseDuration(value: unknown): number | null {

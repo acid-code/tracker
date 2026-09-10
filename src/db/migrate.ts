@@ -311,6 +311,53 @@ const INCREMENTAL = [
   `ALTER TABLE daily_menu_items ADD COLUMN fiberG REAL NOT NULL DEFAULT 0`,
   `ALTER TABLE standing_menu_items ADD COLUMN fiberG REAL NOT NULL DEFAULT 0`,
   `ALTER TABLE checklist_items ADD COLUMN endedOn TEXT`,
+  `ALTER TABLE profiles ADD COLUMN fatTargetOverride INTEGER`,
+  `ALTER TABLE profiles ADD COLUMN suggestedGoalMode TEXT`,
+  `ALTER TABLE profiles ADD COLUMN suggestedCalorieTarget INTEGER`,
+  `ALTER TABLE profiles ADD COLUMN suggestedProteinG INTEGER`,
+  `ALTER TABLE profiles ADD COLUMN suggestedFatG INTEGER`,
+  `ALTER TABLE profiles ADD COLUMN suggestedDeficitKcal INTEGER`,
+  `ALTER TABLE profiles ADD COLUMN suggestedRationale TEXT`,
+  `ALTER TABLE profiles ADD COLUMN suggestedAt INTEGER`,
+  `ALTER TABLE profiles ADD COLUMN suggestedBasedOnWeightKg REAL`,
+  `ALTER TABLE profiles ADD COLUMN suggestedBasedOnBf REAL`,
+  `ALTER TABLE profiles ADD COLUMN suggestedBasedOnActivity TEXT`,
+  `ALTER TABLE profiles ADD COLUMN migrationStatus TEXT DEFAULT 'pending'`,
+  `CREATE TABLE IF NOT EXISTS target_plans (
+    id TEXT PRIMARY KEY NOT NULL,
+    userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    effectiveFrom TEXT NOT NULL,
+    calorieTarget INTEGER NOT NULL,
+    proteinG INTEGER NOT NULL,
+    fatG INTEGER NOT NULL,
+    carbsG INTEGER NOT NULL,
+    tdee INTEGER NOT NULL,
+    deficitKcal INTEGER NOT NULL,
+    goalMode TEXT,
+    source TEXT NOT NULL DEFAULT 'override',
+    createdAt INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+  )`,
+  `CREATE INDEX IF NOT EXISTS target_plans_user_from ON target_plans(userId, effectiveFrom)`,
+  `CREATE TABLE IF NOT EXISTS encrypted_blobs (
+    id TEXT PRIMARY KEY NOT NULL,
+    userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    deviceId TEXT,
+    domain TEXT NOT NULL,
+    date TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    ciphertext TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+  )`,
+  `CREATE INDEX IF NOT EXISTS encrypted_blobs_user_domain_date ON encrypted_blobs(userId, domain, date)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS encrypted_blobs_unique ON encrypted_blobs(userId, domain, date)`,
+  `CREATE TABLE IF NOT EXISTS user_devices (
+    id TEXT PRIMARY KEY NOT NULL,
+    userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    deviceId TEXT NOT NULL,
+    label TEXT,
+    lastSeenAt INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS user_devices_unique ON user_devices(userId, deviceId)`,
 ];
 
 export async function ensureMigrated(client: Client) {

@@ -2,44 +2,69 @@ import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { jsonError, jsonOk, requireUser } from "@/lib/api";
 import {
+  suggestTargetsFromGoal,
+  suggestionIsStale,
+  type GoalMode,
+} from "@/lib/goal-suggest";
+import {
+  ensureSeedTargetPlan,
+  listTargetPlans,
+  profileToForTargets,
+  upsertTargetPlan,
+} from "@/lib/target-plans";
+import {
   ACTIVITY_OPTIONS,
   DEFAULT_DEFICIT_KCAL,
   DEFAULT_PROTEIN_PER_KG,
   clampDeficit,
+  clampEnergyDelta,
   resolveTargets,
+  resolveTargetsForDate,
+  todayISODate,
   type ActivityLevel,
   type Sex,
 } from "@/lib/tdee";
 
-function profileTargets(profile: {
-  weightKg: number | null;
-  heightCm: number | null;
-  age: number | null;
-  sex: string | null;
-  bodyFatPercent: number | null;
-  activityLevel: string | null;
-  deficitKcal: number | null;
-  proteinPerKg: number | null;
-  calorieTargetOverride: number | null;
-  proteinTargetOverride: number | null;
-}) {
-  return resolveTargets({
+async function profilePayload(
+  userId: string,
+  profile: typeof schema.profiles.$inferSelect,
+  date = todayISODate(),
+) {
+  const plans = await ensureSeedTargetPlan(userId, profile);
+  const forTargets = profileToForTargets(profile);
+  const targets = resolveTargetsForDate(forTargets, plans, date);
+  const live = resolveTargets(forTargets);
+  const stale = suggestionIsStale({
+    suggestedBasedOnWeightKg: profile.suggestedBasedOnWeightKg,
+    suggestedBasedOnBf: profile.suggestedBasedOnBf,
+    suggestedBasedOnActivity: profile.suggestedBasedOnActivity,
     weightKg: profile.weightKg,
-    heightCm: profile.heightCm,
-    age: profile.age,
-    sex: (profile.sex as Sex | null) ?? null,
     bodyFatPercent: profile.bodyFatPercent,
-    activityLevel: (profile.activityLevel ?? "moderate") as ActivityLevel,
-    deficitKcal: profile.deficitKcal ?? DEFAULT_DEFICIT_KCAL,
-    proteinPerKg: profile.proteinPerKg ?? DEFAULT_PROTEIN_PER_KG,
-    calorieTargetOverride: profile.calorieTargetOverride ?? null,
-    proteinTargetOverride: profile.proteinTargetOverride ?? null,
+    activityLevel: profile.activityLevel,
   });
+  return {
+    userId,
+    profile,
+    targets,
+    liveTargets: live,
+    plans,
+    suggestionStale: stale,
+    needsBodyFat: profile.bodyFatPercent == null,
+  };
 }
 
-export async function GET() {
+function parseOverride(v: unknown): number | null {
+  if (v === null || v === "" || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+export async function GET(req: Request) {
   const authz = await requireUser();
   if ("error" in authz) return authz.error;
+
+  const url = new URL(req.url);
+  const date = url.searchParams.get("date") || todayISODate();
 
   const db = await getDb();
   const profile = await db.query.profiles.findFirst({
@@ -51,16 +76,14 @@ export async function GET() {
       userId: authz.userId,
       profile: profile ?? null,
       targets: null,
+      liveTargets: null,
+      plans: [],
+      suggestionStale: false,
       needsBodyFat: !profile?.bodyFatPercent,
     });
   }
 
-  return jsonOk({
-    userId: authz.userId,
-    profile,
-    targets: profileTargets(profile),
-    needsBodyFat: false,
-  });
+  return jsonOk(await profilePayload(authz.userId, profile, date));
 }
 
 export async function PUT(req: Request) {
@@ -73,21 +96,168 @@ export async function PUT(req: Request) {
     where: eq(schema.profiles.userId, authz.userId),
   });
 
+  const clientDate =
+    typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date)
+      ? body.date
+      : todayISODate();
+
+  /** Refresh suggestion from goal text + body stats (does not append a plan). */
+  if (body.refreshSuggestion === true && existing) {
+    if (!existing.weightKg || existing.bodyFatPercent == null) {
+      return jsonError("Profile incomplete");
+    }
+    const goalTarget =
+      body.goalTarget !== undefined
+        ? body.goalTarget === null || body.goalTarget === ""
+          ? null
+          : String(body.goalTarget).trim().slice(0, 500)
+        : existing.goalTarget;
+    const suggested = suggestTargetsFromGoal({
+      goalTarget,
+      weightKg: existing.weightKg,
+      bodyFatPercent: existing.bodyFatPercent,
+      activityLevel: (existing.activityLevel ?? "moderate") as ActivityLevel,
+      sex: (existing.sex as Sex | null) ?? null,
+      mode: body.goalMode as GoalMode | undefined,
+    });
+    const values = {
+      goalTarget,
+      suggestedGoalMode: suggested.mode,
+      suggestedCalorieTarget: suggested.calorieTarget,
+      suggestedProteinG: suggested.proteinG,
+      suggestedFatG: suggested.fatG,
+      suggestedDeficitKcal: suggested.deficit,
+      suggestedRationale: suggested.rationale,
+      suggestedAt: new Date(),
+      suggestedBasedOnWeightKg: suggested.basedOnWeightKg,
+      suggestedBasedOnBf: suggested.basedOnBodyFatPercent,
+      suggestedBasedOnActivity: suggested.basedOnActivityLevel,
+      deficitKcal: clampEnergyDelta(suggested.deficit),
+      updatedAt: new Date(),
+    };
+    await db
+      .update(schema.profiles)
+      .set(values)
+      .where(eq(schema.profiles.userId, authz.userId));
+    const profile = { ...existing, ...values };
+    return jsonOk(await profilePayload(authz.userId, profile, clientDate));
+  }
+
+  /** Apply saved suggestion or custom macros as a plan from today. */
+  if (body.applyPlan === true && existing) {
+    const calorieTargetOverride = parseOverride(body.calorieTargetOverride);
+    const proteinTargetOverride = parseOverride(body.proteinTargetOverride);
+    const fatTargetOverride = parseOverride(body.fatTargetOverride);
+    if (
+      (calorieTargetOverride != null &&
+        (!Number.isFinite(calorieTargetOverride) ||
+          calorieTargetOverride <= 0)) ||
+      (proteinTargetOverride != null &&
+        (!Number.isFinite(proteinTargetOverride) ||
+          proteinTargetOverride <= 0)) ||
+      (fatTargetOverride != null &&
+        (!Number.isFinite(fatTargetOverride) || fatTargetOverride <= 0))
+    ) {
+      return jsonError("Invalid target overrides");
+    }
+
+    const useSuggestion = body.useSuggestion === true;
+    let calorieTarget: number;
+    let proteinG: number;
+    let fatG: number;
+    let carbsG: number;
+    let tdee: number;
+    let deficitKcal: number;
+    let goalMode: string | null;
+    let source: "override" | "apply_suggestion" = "override";
+
+    if (useSuggestion && existing.suggestedCalorieTarget != null) {
+      calorieTarget = existing.suggestedCalorieTarget;
+      proteinG = existing.suggestedProteinG ?? 0;
+      fatG = existing.suggestedFatG ?? 0;
+      const proteinKcal = proteinG * 4;
+      carbsG = Math.round(
+        Math.max(0, calorieTarget - proteinKcal - fatG * 9) / 4,
+      );
+      const live = resolveTargets(profileToForTargets(existing));
+      tdee = live?.tdee ?? calorieTarget + (existing.suggestedDeficitKcal ?? 0);
+      deficitKcal = existing.suggestedDeficitKcal ?? tdee - calorieTarget;
+      goalMode = existing.suggestedGoalMode;
+      source = "apply_suggestion";
+    } else {
+      const forTargets = profileToForTargets({
+        ...existing,
+        calorieTargetOverride,
+        proteinTargetOverride,
+        fatTargetOverride,
+      });
+      const live = resolveTargets(forTargets);
+      if (!live) return jsonError("Cannot resolve targets");
+      calorieTarget = live.calorieTarget;
+      proteinG = live.proteinG;
+      fatG = live.fatG;
+      carbsG = live.carbsG;
+      tdee = live.tdee;
+      deficitKcal = live.deficit;
+      goalMode = existing.suggestedGoalMode;
+    }
+
+    const values = {
+      calorieTargetOverride: useSuggestion ? calorieTarget : calorieTargetOverride,
+      proteinTargetOverride: useSuggestion ? proteinG : proteinTargetOverride,
+      fatTargetOverride: useSuggestion ? fatG : fatTargetOverride,
+      ...(body.goalTarget !== undefined
+        ? {
+            goalTarget:
+              body.goalTarget === null || body.goalTarget === ""
+                ? null
+                : String(body.goalTarget).trim().slice(0, 500),
+          }
+        : {}),
+      updatedAt: new Date(),
+    };
+    await db
+      .update(schema.profiles)
+      .set(values)
+      .where(eq(schema.profiles.userId, authz.userId));
+
+    await upsertTargetPlan({
+      userId: authz.userId,
+      effectiveFrom: clientDate,
+      calorieTarget,
+      proteinG,
+      fatG,
+      carbsG,
+      tdee,
+      deficitKcal,
+      goalMode,
+      source,
+    });
+
+    const profile = { ...existing, ...values };
+    return jsonOk(await profilePayload(authz.userId, profile, clientDate));
+  }
+
   const isNutritionOnly =
     body.nutritionOnly === true ||
     (body.weightKg == null && existing != null);
 
   if (isNutritionOnly && existing) {
-    const calorieTargetOverride =
-      body.calorieTargetOverride === null ||
-      body.calorieTargetOverride === ""
-        ? null
-        : Number(body.calorieTargetOverride);
-    const proteinTargetOverride =
-      body.proteinTargetOverride === null ||
-      body.proteinTargetOverride === ""
-        ? null
-        : Number(body.proteinTargetOverride);
+    const calorieTargetOverride = parseOverride(
+      body.calorieTargetOverride !== undefined
+        ? body.calorieTargetOverride
+        : existing.calorieTargetOverride,
+    );
+    const proteinTargetOverride = parseOverride(
+      body.proteinTargetOverride !== undefined
+        ? body.proteinTargetOverride
+        : existing.proteinTargetOverride,
+    );
+    const fatTargetOverride = parseOverride(
+      body.fatTargetOverride !== undefined
+        ? body.fatTargetOverride
+        : existing.fatTargetOverride,
+    );
 
     if (
       calorieTargetOverride != null &&
@@ -101,10 +271,17 @@ export async function PUT(req: Request) {
     ) {
       return jsonError("Invalid protein target");
     }
+    if (
+      fatTargetOverride != null &&
+      (!Number.isFinite(fatTargetOverride) || fatTargetOverride <= 0)
+    ) {
+      return jsonError("Invalid fat target");
+    }
 
     const values = {
       calorieTargetOverride,
       proteinTargetOverride,
+      fatTargetOverride,
       countryCode: body.countryCode ?? existing.countryCode ?? "il",
       ...(body.goalTarget !== undefined
         ? {
@@ -122,11 +299,27 @@ export async function PUT(req: Request) {
       .set(values)
       .where(eq(schema.profiles.userId, authz.userId));
 
+    if (body.appendPlan === true) {
+      const forTargets = profileToForTargets({ ...existing, ...values });
+      const live = resolveTargets(forTargets);
+      if (live) {
+        await upsertTargetPlan({
+          userId: authz.userId,
+          effectiveFrom: clientDate,
+          calorieTarget: live.calorieTarget,
+          proteinG: live.proteinG,
+          fatG: live.fatG,
+          carbsG: live.carbsG,
+          tdee: live.tdee,
+          deficitKcal: live.deficit,
+          goalMode: existing.suggestedGoalMode,
+          source: "override",
+        });
+      }
+    }
+
     const profile = { ...existing, ...values };
-    return jsonOk({
-      profile,
-      targets: profileTargets(profile),
-    });
+    return jsonOk(await profilePayload(authz.userId, profile, clientDate));
   }
 
   const weightKg = Number(body.weightKg);
@@ -138,9 +331,10 @@ export async function PUT(req: Request) {
   if (!ACTIVITY_OPTIONS.includes(activityLevel) && activityLevel !== "very_active") {
     activityLevel = "moderate";
   }
-  const deficitKcal = clampDeficit(
-    Number(body.deficitKcal ?? DEFAULT_DEFICIT_KCAL),
-  );
+  const deficitRaw = Number(body.deficitKcal ?? DEFAULT_DEFICIT_KCAL);
+  const deficitKcal = body.allowAnyDeficit
+    ? clampEnergyDelta(deficitRaw)
+    : clampDeficit(deficitRaw);
   const proteinPerKg = Number(
     body.proteinPerKg ?? DEFAULT_PROTEIN_PER_KG,
   );
@@ -161,6 +355,37 @@ export async function PUT(req: Request) {
     return jsonError("Body fat % is required (3–60)");
   }
 
+  const goalTarget =
+    body.goalTarget !== undefined
+      ? body.goalTarget === null || body.goalTarget === ""
+        ? null
+        : String(body.goalTarget).trim().slice(0, 500)
+      : (existing?.goalTarget ?? null);
+
+  let suggestionFields: Record<string, unknown> = {};
+  if (body.refreshSuggestion !== false) {
+    const suggested = suggestTargetsFromGoal({
+      goalTarget,
+      weightKg,
+      bodyFatPercent,
+      activityLevel,
+      sex,
+    });
+    suggestionFields = {
+      suggestedGoalMode: suggested.mode,
+      suggestedCalorieTarget: suggested.calorieTarget,
+      suggestedProteinG: suggested.proteinG,
+      suggestedFatG: suggested.fatG,
+      suggestedDeficitKcal: suggested.deficit,
+      suggestedRationale: suggested.rationale,
+      suggestedAt: new Date(),
+      suggestedBasedOnWeightKg: suggested.basedOnWeightKg,
+      suggestedBasedOnBf: suggested.basedOnBodyFatPercent,
+      suggestedBasedOnActivity: suggested.basedOnActivityLevel,
+      deficitKcal: clampEnergyDelta(suggested.deficit),
+    };
+  }
+
   const values = {
     userId: authz.userId,
     weightKg,
@@ -169,17 +394,16 @@ export async function PUT(req: Request) {
     sex,
     bodyFatPercent,
     activityLevel,
-    deficitKcal,
+    deficitKcal:
+      (suggestionFields.deficitKcal as number | undefined) ?? deficitKcal,
     proteinPerKg,
     countryCode: body.countryCode ?? existing?.countryCode ?? "il",
     calorieTargetOverride: existing?.calorieTargetOverride ?? null,
     proteinTargetOverride: existing?.proteinTargetOverride ?? null,
-    goalTarget:
-      body.goalTarget !== undefined
-        ? body.goalTarget === null || body.goalTarget === ""
-          ? null
-          : String(body.goalTarget).trim().slice(0, 500)
-        : (existing?.goalTarget ?? null),
+    fatTargetOverride: existing?.fatTargetOverride ?? null,
+    goalTarget,
+    ...suggestionFields,
+    migrationStatus: existing?.migrationStatus ?? "pending",
     updatedAt: new Date(),
   };
 
@@ -192,11 +416,10 @@ export async function PUT(req: Request) {
     await db.insert(schema.profiles).values(values);
   }
 
-  const { todayISODate } = await import("@/lib/tdee");
   const weightChanged =
     !existing || existing.weightKg == null || existing.weightKg !== weightKg;
   if (weightChanged) {
-    const date = todayISODate();
+    const date = clientDate;
     const todayLog = await db.query.weightLogs.findFirst({
       where: and(
         eq(schema.weightLogs.userId, authz.userId),
@@ -217,8 +440,24 @@ export async function PUT(req: Request) {
     }
   }
 
-  return jsonOk({
-    profile: values,
-    targets: profileTargets(values),
-  });
+  const profile = values as typeof schema.profiles.$inferSelect;
+  if (!existing) {
+    const live = resolveTargets(profileToForTargets(profile));
+    if (live) {
+      await upsertTargetPlan({
+        userId: authz.userId,
+        effectiveFrom: clientDate,
+        calorieTarget: live.calorieTarget,
+        proteinG: live.proteinG,
+        fatG: live.fatG,
+        carbsG: live.carbsG,
+        tdee: live.tdee,
+        deficitKcal: live.deficit,
+        goalMode: profile.suggestedGoalMode,
+        source: "seed",
+      });
+    }
+  }
+
+  return jsonOk(await profilePayload(authz.userId, profile, clientDate));
 }

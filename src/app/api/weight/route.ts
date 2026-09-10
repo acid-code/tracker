@@ -6,12 +6,13 @@ import { syncProfileWeightFromLogs } from "@/lib/weight-sync";
 import {
   caloriesBurnedSession,
   looksLikeCardioSession,
-  resolveTargets,
+  resolveTargetsForDate,
   todayISODate,
-  type ActivityLevel,
-  DEFAULT_DEFICIT_KCAL,
-  DEFAULT_PROTEIN_PER_KG,
 } from "@/lib/tdee";
+import {
+  listTargetPlans,
+  profileToForTargets,
+} from "@/lib/target-plans";
 
 function rangeStart(range: string): string | null {
   if (range === "all") return null;
@@ -107,22 +108,30 @@ export async function GET(req: Request) {
 
     let proteinTarget: number | null = null;
     let calorieTarget: number | null = null;
+    const dayTargets: Record<
+      string,
+      { calorieTarget: number; proteinTarget: number }
+    > = {};
     if (profile?.weightKg && profile.bodyFatPercent != null) {
-      const targets = resolveTargets({
-        weightKg: profile.weightKg,
-        heightCm: profile.heightCm,
-        age: profile.age,
-        sex: (profile.sex as "male" | "female" | null) ?? null,
-        bodyFatPercent: profile.bodyFatPercent,
-        activityLevel: (profile.activityLevel ?? "moderate") as ActivityLevel,
-        deficitKcal: profile.deficitKcal ?? DEFAULT_DEFICIT_KCAL,
-        proteinPerKg: profile.proteinPerKg ?? DEFAULT_PROTEIN_PER_KG,
-        calorieTargetOverride: profile.calorieTargetOverride ?? null,
-        proteinTargetOverride: profile.proteinTargetOverride ?? null,
-      });
-      if (targets) {
-        proteinTarget = targets.proteinMinG;
-        calorieTarget = targets.calorieTarget;
+      const plans = await listTargetPlans(authz.userId);
+      const forTargets = profileToForTargets(profile);
+      const todayTargets = resolveTargetsForDate(
+        forTargets,
+        plans,
+        todayISODate(),
+      );
+      if (todayTargets) {
+        proteinTarget = todayTargets.proteinMinG;
+        calorieTarget = todayTargets.calorieTarget;
+      }
+      for (const day of Object.keys(byDate)) {
+        const t = resolveTargetsForDate(forTargets, plans, day);
+        if (t) {
+          dayTargets[day] = {
+            calorieTarget: t.calorieTarget,
+            proteinTarget: t.proteinMinG,
+          };
+        }
       }
     }
 
@@ -135,6 +144,7 @@ export async function GET(req: Request) {
       days,
       proteinTarget,
       calorieTarget,
+      dayTargets,
     });
   }
 
@@ -169,7 +179,18 @@ export async function GET(req: Request) {
   const weightLogs = await db.query.weightLogs.findMany({
     where: eq(schema.weightLogs.userId, authz.userId),
   });
-  const weightByDate = new Map(weightLogs.map((w) => [w.date, w.weightKg]));
+  const weightDates = [...weightLogs].sort((a, b) =>
+    a.date.localeCompare(b.date),
+  );
+
+  function weightCarryForward(date: string): number | null {
+    let best: number | null = null;
+    for (const w of weightDates) {
+      if (w.date <= date) best = w.weightKg;
+      else break;
+    }
+    return best ?? profile?.weightKg ?? null;
+  }
 
   const byDate: Record<
     string,
@@ -184,11 +205,12 @@ export async function GET(req: Request) {
 
   const sessionsWithBurn = [];
   for (const s of sessions) {
-    const bodyWeightKg =
-      weightByDate.get(s.date) ?? profile?.weightKg ?? null;
+    const bodyWeightKg = weightCarryForward(s.date);
+    const hasAsOfLog = weightDates.some((w) => w.date <= s.date);
     const caloriesBurned = resolveSessionBurn(bodyWeightKg, s);
-    /** Backfill wiped cache so future reads stay cheap. */
+    /** Only persist EEE when we had a weight log as-of that day (not live profile alone). */
     if (
+      hasAsOfLog &&
       caloriesBurned != null &&
       caloriesBurned > 0 &&
       (s.caloriesBurned == null || Number(s.caloriesBurned) <= 0) &&

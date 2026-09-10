@@ -6,10 +6,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api-fetch";
 import { invalidateAfterProfile } from "@/lib/query-invalidate";
 import { queryKeys } from "@/lib/query-keys";
+import { todayISODate } from "@/lib/tdee";
 
 type Targets = {
   calorieTarget: number;
   proteinG: number;
+  fatG?: number;
   computedCalorieTarget?: number;
   computedProteinG?: number;
   hasOverrides?: boolean;
@@ -19,16 +21,25 @@ type ProfilePayload = {
   profile?: {
     calorieTargetOverride?: number | null;
     proteinTargetOverride?: number | null;
+    fatTargetOverride?: number | null;
+    suggestedCalorieTarget?: number | null;
+    suggestedProteinG?: number | null;
+    suggestedFatG?: number | null;
+    suggestedRationale?: string | null;
+    suggestedGoalMode?: string | null;
   } | null;
   targets?: Targets | null;
+  suggestionStale?: boolean;
 };
 
 export function SettingsNutrition() {
   const queryClient = useQueryClient();
-  const [calorieTarget, setCalorieTarget] = useState<string>("");
-  const [proteinTarget, setProteinTarget] = useState<string>("");
-  const [useCalculator, setUseCalculator] = useState(true);
+  const [calorieTarget, setCalorieTarget] = useState("");
+  const [proteinTarget, setProteinTarget] = useState("");
+  const [fatTarget, setFatTarget] = useState("");
+  const [useSuggestion, setUseSuggestion] = useState(true);
   const [computed, setComputed] = useState<Targets | null>(null);
+  const [rationale, setRationale] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -41,60 +52,70 @@ export function SettingsNutrition() {
   useEffect(() => {
     const d = profileQuery.data;
     if (!d || hydrated) return;
-    if (d.targets) {
-      setComputed(d.targets);
-      const hasOverrides =
-        d.profile?.calorieTargetOverride != null ||
-        d.profile?.proteinTargetOverride != null;
-      setUseCalculator(!hasOverrides);
-      if (hasOverrides) {
-        setCalorieTarget(String(d.targets.calorieTarget));
-        setProteinTarget(String(d.targets.proteinG));
-      }
-    }
+    if (d.targets) setComputed(d.targets);
+    setRationale(d.profile?.suggestedRationale ?? null);
+    const hasOverrides =
+      d.profile?.calorieTargetOverride != null ||
+      d.profile?.proteinTargetOverride != null ||
+      d.profile?.fatTargetOverride != null;
+    setUseSuggestion(!hasOverrides);
+    setCalorieTarget(
+      String(
+        d.profile?.calorieTargetOverride ??
+          d.targets?.calorieTarget ??
+          d.profile?.suggestedCalorieTarget ??
+          "",
+      ),
+    );
+    setProteinTarget(
+      String(
+        d.profile?.proteinTargetOverride ??
+          d.targets?.proteinG ??
+          d.profile?.suggestedProteinG ??
+          "",
+      ),
+    );
+    setFatTarget(
+      String(
+        d.profile?.fatTargetOverride ??
+          d.targets?.fatG ??
+          d.profile?.suggestedFatG ??
+          "",
+      ),
+    );
     setHydrated(true);
   }, [profileQuery.data, hydrated]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setMessage("");
-    const calorieTargetOverride = useCalculator
-      ? null
-      : calorieTarget.trim() === ""
-        ? null
-        : Number(calorieTarget);
-    const proteinTargetOverride = useCalculator
-      ? null
-      : proteinTarget.trim() === ""
-        ? null
-        : Number(proteinTarget);
-    if (
-      calorieTargetOverride != null &&
-      (!Number.isFinite(calorieTargetOverride) || calorieTargetOverride <= 0)
-    ) {
-      setMessage("Calorie target must be a positive number.");
-      return;
-    }
-    if (
-      proteinTargetOverride != null &&
-      (!Number.isFinite(proteinTargetOverride) || proteinTargetOverride <= 0)
-    ) {
-      setMessage("Protein target must be a positive number.");
-      return;
-    }
     setSaving(true);
     try {
       const data = await apiFetch<ProfilePayload>("/api/profile", {
         method: "PUT",
-        body: JSON.stringify({
-          nutritionOnly: true,
-          calorieTargetOverride,
-          proteinTargetOverride,
-          countryCode: "il",
-        }),
+        body: JSON.stringify(
+          useSuggestion
+            ? {
+                applyPlan: true,
+                useSuggestion: true,
+                date: todayISODate(),
+              }
+            : {
+                applyPlan: true,
+                useSuggestion: false,
+                calorieTargetOverride: Number(calorieTarget),
+                proteinTargetOverride: Number(proteinTarget),
+                fatTargetOverride:
+                  fatTarget.trim() === "" ? null : Number(fatTarget),
+                date: todayISODate(),
+              },
+        ),
       });
       setComputed(data.targets ?? null);
-      setMessage("Nutrition targets saved.");
+      setRationale(data.profile?.suggestedRationale ?? null);
+      setMessage(
+        "Nutrition plan saved from today — earlier days keep prior plans.",
+      );
       await invalidateAfterProfile(queryClient);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Save failed");
@@ -111,83 +132,81 @@ export function SettingsNutrition() {
       <div>
         <h2 className="text-sm font-medium">Nutrition targets</h2>
         <p className="text-xs text-[var(--muted)] mt-1">
-          Set once here — shown as remaining when logging food. Protein uses a
-          1.61–2.2 g/kg range (floor 1.61). Region: Israel (Open Food Facts).
+          Changes apply from today only. Full calculator + goal text:{" "}
+          <Link href="/calculator" className="underline">
+            Profile / Calculator
+          </Link>
+          .
         </p>
       </div>
 
+      {rationale ? (
+        <p className="text-xs text-[var(--muted)] leading-relaxed">{rationale}</p>
+      ) : null}
+      {profileQuery.data?.suggestionStale ? (
+        <p className="text-xs text-amber-700 dark:text-amber-400">
+          Body stats changed since the saved suggestion — refresh on Calculator.
+        </p>
+      ) : null}
+
       {computed?.computedCalorieTarget != null ? (
         <p className="text-xs text-[var(--muted)]">
-          Calculator suggests: {computed.computedProteinG}g protein ·{" "}
-          {computed.computedCalorieTarget} kcal
+          Formula baseline ~{computed.computedCalorieTarget} kcal /{" "}
+          {computed.computedProteinG}g protein.
         </p>
-      ) : (
-        <p className="text-xs text-[var(--muted)]">
-          Complete your{" "}
-          <Link href="/calculator" className="text-[var(--accent)] hover:underline">
-            profile & calculator
-          </Link>{" "}
-          for suggested targets.
-        </p>
-      )}
+      ) : null}
 
       <form onSubmit={(e) => void save(e)} className="space-y-3">
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
-            checked={useCalculator}
-            onChange={(e) => setUseCalculator(e.target.checked)}
+            checked={useSuggestion}
+            onChange={(e) => setUseSuggestion(e.target.checked)}
           />
-          Use calculator targets
+          Use saved suggestion / calculator plan
         </label>
-
-        {!useCalculator ? (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-[var(--muted)]">Protein (g)</label>
-              <input
-                className={field}
-                type="number"
-                value={proteinTarget}
-                onChange={(e) => setProteinTarget(e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <label className="text-xs text-[var(--muted)]">Calories</label>
+        {!useSuggestion ? (
+          <div className="grid grid-cols-3 gap-2">
+            <label className="block space-y-1">
+              <span className="text-xs text-[var(--muted)]">kcal</span>
               <input
                 className={field}
                 type="number"
                 value={calorieTarget}
                 onChange={(e) => setCalorieTarget(e.target.value)}
-                required
               />
-            </div>
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-[var(--muted)]">Protein</span>
+              <input
+                className={field}
+                type="number"
+                value={proteinTarget}
+                onChange={(e) => setProteinTarget(e.target.value)}
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-[var(--muted)]">Fat</span>
+              <input
+                className={field}
+                type="number"
+                value={fatTarget}
+                onChange={(e) => setFatTarget(e.target.value)}
+              />
+            </label>
           </div>
-        ) : computed ? (
-          <p className="text-sm">
-            Active: {computed.proteinG}g protein · {computed.calorieTarget} kcal
-          </p>
         ) : null}
-
         <button
           type="submit"
           disabled={saving}
-          className="rounded-md bg-[var(--accent)] text-[var(--background)] px-4 py-2 text-sm font-medium disabled:opacity-50"
+          className="rounded-md bg-[var(--accent)] text-[var(--background)] px-3 py-2 text-sm disabled:opacity-60"
         >
-          {saving ? "Saving…" : "Save targets"}
+          {saving ? "Saving…" : "Save plan from today"}
         </button>
         {message ? (
           <p className="text-xs text-[var(--muted)]">{message}</p>
         ) : null}
       </form>
-
-      <Link
-        href="/calculator"
-        className="inline-block text-sm text-[var(--accent)] hover:underline"
-      >
-        Adjust body stats & TDEE →
-      </Link>
     </section>
   );
 }

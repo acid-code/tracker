@@ -5,8 +5,8 @@ import {
 } from "@/lib/user-storage";
 import { todayISODate } from "@/lib/tdee";
 
-/** Keep two weeks of nutrition logs warm in localStorage for instant UI. */
-export const MACROS_CACHE_WINDOW_DAYS = 14;
+/** Keep two months of nutrition logs warm locally for instant UI. */
+export const MACROS_CACHE_WINDOW_DAYS = 60;
 const STORAGE_BASE = "macros-local-v2";
 
 export type MacrosLocalFood = {
