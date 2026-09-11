@@ -14,6 +14,7 @@ import {
 } from "@/lib/remind-schedule";
 import type { RemindFreq } from "@/lib/security";
 import { todayISODate } from "@/lib/tdee";
+import { notificationVisuals } from "@/lib/notification-visuals";
 import { readUserStorageItem, writeUserStorageItem } from "@/lib/user-storage";
 
 export const REMINDERS_READY_EVENT = "recomp-reminders-ready";
@@ -74,8 +75,7 @@ async function showOsNotification(title: string, body: string, tag: string) {
   const opts: NotificationOptions = {
     body,
     tag,
-    icon: "/icons/icon-192.png",
-    badge: "/icons/notification-badge.png",
+    ...notificationVisuals(window.location.origin),
   };
   try {
     const reg = await navigator.serviceWorker?.ready;

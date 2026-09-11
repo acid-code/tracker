@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { REMINDERS_READY_EVENT } from "@/components/ReminderLocalTicker";
 import { apiFetch } from "@/lib/api-fetch";
+import { notificationVisuals } from "@/lib/notification-visuals";
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -155,8 +156,7 @@ export function ReminderEnableBanner() {
         await reg.showNotification("Recomp Tracker", {
           body: "Android push on — due times can alert even if the app is closed.",
           tag: "recomp-reminders-test",
-          icon: "/icons/icon-192.png",
-          badge: "/icons/notification-badge.png",
+          ...notificationVisuals(window.location.origin),
         });
       } catch {
         /* ignore test toast failure */

@@ -10,11 +10,12 @@ self.addEventListener("push", (event) => {
     data = { title: "Recomp Tracker", body: event.data?.text() || "Reminder" };
   }
   const title = data.title || "Recomp Tracker";
+  const origin = self.location.origin;
   event.waitUntil(
     self.registration.showNotification(title, {
       body: data.body || "Checklist reminder",
-      icon: "/icons/icon-192.png",
-      badge: "/icons/notification-badge.png",
+      icon: `${origin}/icons/icon-192.png`,
+      badge: `${origin}/icons/notification-badge-v2.png`,
       tag: data.tag || "checklist-reminder",
       data: { url: data.url || "/lists" },
     }),
